@@ -35,6 +35,7 @@ ModuleSymbol*                      baseModule            = NULL;
 ModuleSymbol*                      stringLiteralModule   = NULL;
 ModuleSymbol*                      standardModule        = NULL;
 ModuleSymbol*                      printModuleInitModule = NULL;
+ModuleSymbol*                      ioModule              = NULL;
 
 Vec<ModuleSymbol*>                 userModules; // Contains user + main modules
 Vec<ModuleSymbol*>                 allModules;  // Contains all modules except rootModule
@@ -621,7 +622,9 @@ void ModuleSymbol::addDefaultUses() {
   if (modTag != MOD_INTERNAL) {
     ModuleSymbol* parentModule = toModuleSymbol(this->defPoint->parentSymbol);
 
-    assert (parentModule != NULL);
+    if (parentModule == NULL) {
+      USR_FATAL(this, "Modules must be declared at module- or file-scope");
+    }
 
     //
     // Don't insert 'use ChapelStandard' for nested user modules.

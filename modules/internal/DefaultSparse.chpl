@@ -20,8 +20,8 @@
 // DefaultSparse.chpl
 //
 module DefaultSparse {
-  use ChapelStandard;
-  use RangeChunk only ;
+  private use ChapelStandard;
+  private use RangeChunk only ;
 
   config param debugDefaultSparse = false;
 
@@ -77,7 +77,7 @@ module DefaultSparse {
           yield indices(i);
         }
       } else {
-        coforall chunk in chunks(1..numElems, numChunks) {
+        coforall chunk in RangeChunk.chunks(1..numElems, numChunks) {
           for i in chunk do
             yield indices(i);
         }
@@ -96,7 +96,7 @@ module DefaultSparse {
         // ... except if 1, just use the current thread
         yield (this, 1, numElems);
       else
-        coforall chunk in chunks(1..numElems, numChunks) do
+        coforall chunk in RangeChunk.chunks(1..numElems, numChunks) do
           yield (this, chunk.first, chunk.last);
     }
 
@@ -354,7 +354,20 @@ module DefaultSparse {
     }
 
     proc dsiAssignDomain(rhs: domain, lhsPrivate:bool) {
-      chpl_assignDomainWithIndsIterSafeForRemoving(this, rhs);
+      if _to_borrowed(rhs._instance.type) == this.type && this.dsiNumIndices == 0 {
+
+        // ENGIN: We cannot use bulkGrow here, because rhs might be grown using
+        // grow, which has a different heuristic to grow the internal arrays.
+        // That may result in size mismatch in the following internal array
+        // assignments
+        this._nnz = rhs._nnz;
+        this.nnzDom = rhs.nnzDom;
+
+        this.indices = rhs.indices;
+      }
+      else {
+        chpl_assignDomainWithIndsIterSafeForRemoving(this, rhs);
+      }
     }
 
     proc dsiHasSingleLocalSubdomain() param return true;
@@ -476,7 +489,7 @@ module DefaultSparse {
           yield data[i];
         }
       } else {
-        coforall chunk in chunks(1..numElems, numChunks) {
+        coforall chunk in RangeChunk.chunks(1..numElems, numChunks) {
           for i in chunk do
             yield data[i];
         }

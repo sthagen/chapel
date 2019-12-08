@@ -36,6 +36,7 @@
 #include "symbol.h"
 #include "typeSpecifier.h"
 #include "visibleFunctions.h"
+#include "wellknown.h"
 
 #ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS
@@ -74,7 +75,7 @@ static bool           isInstantiatedField(Symbol* field);
 
 static Expr*          createFunctionAsValue(CallExpr* call);
 
-static AggregateType* createOrFindFunTypeFromAnnotation(AList&    argList,
+static Type*          createOrFindFunTypeFromAnnotation(AList& argList,
                                                         CallExpr* call);
 
 static Expr*          dropUnnecessaryCast(CallExpr* call);
@@ -95,6 +96,8 @@ static FnSymbol*      createAndInsertFunParentMethod(CallExpr*      call,
                                                      bool           isFormal,
                                                      Type*          retType,
                                                      bool           throws);
+
+static Type*          getFcfSharedWrapperType(AggregateType* parent);
 
 /************************************* | **************************************
 *                                                                             *
@@ -254,9 +257,13 @@ static Expr* preFoldPrimOp(CallExpr* call) {
         ModuleSymbol *mod = fn->getModule();
         if (mod->modTag == MOD_USER) {
           if (fn->numFormals() == 1) {
-            if (!fn->hasFlag(FLAG_GENERIC) && fn->instantiatedFrom == NULL) {
+            if (fn->instantiatedFrom == NULL && ! fn->isKnownToBeGeneric()) {
               const char* name = astr(fn->name);
               resolveSignature(fn);
+              TagGenericResult tagResult = fn->tagIfGeneric(NULL, true);
+              if (tagResult == TGR_TAGGING_ABORTED ||
+                  (tagResult == TGR_NEWLY_TAGGED && fn->isGeneric()))
+                continue;
               if(isSubtypeOrInstantiation(fn->getFormal(1)->type, testType,call)) {
                 totalTest++;
                 CallExpr* newCall = new CallExpr(PRIM_CAPTURE_FN_FOR_CHPL, new UnresolvedSymExpr(name));
@@ -412,8 +419,7 @@ static Expr* preFoldPrimOp(CallExpr* call) {
   }
 
   case PRIM_CREATE_FN_TYPE: {
-    AggregateType* parent = createOrFindFunTypeFromAnnotation(call->argList,
-                                                              call);
+    Type* parent = createOrFindFunTypeFromAnnotation(call->argList, call);
     retval = new SymExpr(parent->symbol);
     call->replace(retval);
     break;
@@ -799,7 +805,7 @@ static Expr* preFoldPrimOp(CallExpr* call) {
     // call propagateNotPOD to set FLAG_POD/FLAG_NOT_POD
     propagateNotPOD(t);
 
-    bool needsDestroy = isUserDefinedRecord(t) && !isPOD(t);
+    bool needsDestroy = typeNeedsCopyInitDeinit(t) && !isPOD(t);
 
     if (needsDestroy) {
       retval = new SymExpr(gTrue);
@@ -1561,7 +1567,9 @@ static Expr* preFoldNamed(CallExpr* call) {
           Type* newType = toSE->symbol()->type;
 
           bool fromEnum = is_enum_type(oldType);
-          bool fromString = (oldType == dtString || oldType == dtStringC);
+          bool fromString = (oldType == dtString || 
+                             oldType == dtStringC);
+          bool fromBytes = oldType == dtBytes;
           bool fromIntUint = is_int_type(oldType) ||
                              is_uint_type(oldType);
           bool fromRealEtc = is_real_type(oldType) ||
@@ -1570,7 +1578,9 @@ static Expr* preFoldNamed(CallExpr* call) {
           bool fromIntEtc = fromIntUint || fromRealEtc || is_bool_type(oldType);
 
           bool toEnum = is_enum_type(newType);
-          bool toString = (newType == dtString || newType == dtStringC);
+          bool toString = (newType == dtString ||
+                           newType == dtStringC);
+          bool toBytes = newType == dtBytes;
           bool toIntUint = is_int_type(newType) ||
                            is_uint_type(newType);
           bool toRealEtc = is_real_type(newType) ||
@@ -1633,8 +1643,22 @@ static Expr* preFoldNamed(CallExpr* call) {
 
             call->replace(retval);
 
+          // Handle string:bytes and c_string:bytes casts
+          } else if (imm != NULL && fromString && toBytes) {
+
+            retval = new SymExpr(new_BytesSymbol(imm->v_string));
+
+            call->replace(retval);
+
+          // Handle bytes:c_string casts (bytes.c_str()) is used in IO
+          } else if (imm != NULL && fromBytes && newType == dtStringC) {
+
+            retval = new SymExpr(new_CStringSymbol(imm->v_string));
+
+            call->replace(retval);
+
           // Handle other casts to string
-          } else if (imm != NULL && fromIntEtc && toString) {
+          } else if (imm != NULL && fromIntEtc && (toString || toBytes)) {
             // special case because newType->defaultValue will
             // be null for dtString
 
@@ -1648,6 +1672,8 @@ static Expr* preFoldNamed(CallExpr* call) {
 
             if (newType == dtStringC)
               retval = new SymExpr(new_CStringSymbol(coerce.v_string));
+            else if (newType == dtBytes)
+              retval = new SymExpr(new_BytesSymbol(coerce.v_string));
             else
               retval = new SymExpr(new_StringSymbol(coerce.v_string));
 
@@ -1810,7 +1836,7 @@ static Expr* resolveTupleIndexing(CallExpr* call, Symbol* baseVar) {
 //
 static Symbol* determineQueriedField(CallExpr* call) {
   AggregateType* at     =
-    toAggregateType(canonicalDecoratedClassType(call->get(1)->getValType()));
+    toAggregateType(canonicalClassType(call->get(1)->getValType()));
   SymExpr*       last   = toSymExpr(call->get(call->numActuals()));
   VarSymbol*     var    = toVarSymbol(last->symbol());
   Symbol*        retval = NULL;
@@ -1957,7 +1983,8 @@ static Expr* createFunctionAsValue(CallExpr *call) {
     if (formal->type->symbol->hasFlag(FLAG_GENERIC)) {
       USR_FATAL_CONT(call, "'%s' cannot be captured as a value because it is a generic function", captured_fn->name);
       if (dummyFcfError == NULL) {
-        AggregateType* parent = createAndInsertFunParentClass(call, "_fcf_error");
+        AggregateType* parent = createAndInsertFunParentClass(call,
+                                                              "_fcf_error");
         dummyFcfError = newTemp(parent);
         theProgram->block->body.insertAtTail(new DefExpr(dummyFcfError));
       }
@@ -2006,17 +2033,9 @@ static Expr* createFunctionAsValue(CallExpr *call) {
 
   TypeSymbol *ts = new TypeSymbol(astr(fcf_name.str().c_str()), ct);
 
-  // Allow a use of a FCF to appear at the statement level i.e.
-  //    nameOfFunc;
-  //
-  // In the longer term it might be good to generate a warning for this
-  if (isBlockStmt(call->parentExpr) == true) {
-    call->insertBefore(new DefExpr(ts));
-
-  // The common case in which the reference is within a move/assign/call
-  } else {
-    call->parentExpr->insertBefore(new DefExpr(ts));
-  }
+  // Add the definition before the definition of the captured function
+  // so that it is visible anywhere the captured function is.
+  captured_fn->defPoint->insertBefore(new DefExpr(ts));
 
   ct->dispatchParents.add(parent);
 
@@ -2122,22 +2141,44 @@ static Expr* createFunctionAsValue(CallExpr *call) {
   FnSymbol* wrapper = new FnSymbol("wrapper");
 
   wrapper->addFlag(FLAG_INLINE);
+  
+  // Insert the wrapper into the AST now so we can resolve some things.
+  call->getStmtExpr()->insertBefore(new DefExpr(wrapper));
+  
+  BlockStmt* block = new BlockStmt();
+  wrapper->insertAtTail(block);
 
   Type* undecorated = getDecoratedClass(ct, CLASS_TYPE_GENERIC_NONNIL);
 
-  CallExpr* n = new CallExpr(PRIM_NEW,
-                             new NamedExpr(astr_chpl_manager,
-                                           new SymExpr(dtUnmanaged->symbol)),
-                             new SymExpr(undecorated->symbol));
+  NamedExpr* usym = new NamedExpr(astr_chpl_manager,
+                                  new SymExpr(dtUnmanaged->symbol));
+  
+  // Create a new "unmanaged child".
+  CallExpr* init = new CallExpr(PRIM_NEW, usym,
+                                new CallExpr(new SymExpr(undecorated->symbol)));
 
-  wrapper->insertAtTail(new CallExpr(PRIM_RETURN,
-                                     new CallExpr(PRIM_CAST,
-                                                  parent->symbol,
-                                                  n)));
+  // Cast to "unmanaged parent".
+  Type* parUnmanaged = getDecoratedClass(parent, CLASS_TYPE_UNMANAGED_NONNIL);
+  CallExpr* parCast = new CallExpr(PRIM_CAST, parUnmanaged->symbol,
+                                   init);
 
-  call->getStmtExpr()->insertBefore(new DefExpr(wrapper));
+  // Get a handle to the type "_shared(parent)".
+  Type* parShared = getFcfSharedWrapperType(parent);
+
+  // Create a new "shared parent" temporary.
+  VarSymbol* temp = newTemp("retval", parShared);
+  block->insertAtTail(new DefExpr(temp));
+
+  // Initialize the temporary with the result of the cast.
+  CallExpr* initTemp = new CallExpr("init", gMethodToken, temp, parCast);
+  block->insertAtTail(initTemp);
+
+  // Return the "shared parent" temporary.
+  CallExpr* ret = new CallExpr(PRIM_RETURN, temp);
+  block->insertAtTail(ret);
 
   normalize(wrapper);
+  wrapper->setGeneric(false);
 
   CallExpr* callWrapper = new CallExpr(wrapper);
 
@@ -2148,7 +2189,16 @@ static Expr* createFunctionAsValue(CallExpr *call) {
   {
     ArgSymbol* fileArg = NULL;
     FnSymbol* fn = buildWriteThisFnSymbol(ct, &fileArg);
+
+    // All compiler generated writeThis routines now throw.
+    fn->throwsErrorInit();
+
     // when printing out a FCF, print out the function's name
+    if (ioModule == NULL) {
+      INT_FATAL("never parsed IO module, this shouldn't be possible");
+    }
+    fn->body->useListAdd(new UseStmt(ioModule, false));
+    fn->getModule()->moduleUseAdd(ioModule);
     fn->insertAtTail(new CallExpr(new CallExpr(".", fileArg,
                                                new_StringSymbol("writeIt")),
                                   new_StringSymbol(astr(flname, "()"))));
@@ -2158,14 +2208,38 @@ static Expr* createFunctionAsValue(CallExpr *call) {
   return callWrapper;
 }
 
+static Type* getFcfSharedWrapperType(AggregateType* parent) {
+  static std::map<AggregateType*, Type*> sharedWrapperTypes;
+
+  Type* result = NULL;
+
+  if (sharedWrapperTypes.find(parent) != sharedWrapperTypes.end()) {
+    result = sharedWrapperTypes[parent];
+  } else {
+    CallExpr* getParShared = new CallExpr(dtShared->symbol, parent->symbol);
+    chpl_gen_main->insertAtHead(getParShared);
+    tryResolveCall(getParShared);
+    getParShared->remove();
+
+    result = getParShared->typeInfo();
+    result->symbol->addFlag(FLAG_FUNCTION_CLASS);
+
+    sharedWrapperTypes[parent] = result;
+  }
+
+  INT_ASSERT(result != NULL);
+
+  return result;
+}
+
 /*
   Helper function for creating or finding the parent class for a given
   function type specified by the type signature.  The last type given
   in the signature is the return type, the remainder represent arguments
   to the function.
 */
-static AggregateType* createOrFindFunTypeFromAnnotation(AList&     argList,
-                                                        CallExpr*  call) {
+static Type* createOrFindFunTypeFromAnnotation(AList& argList,
+                                                      CallExpr* call) {
   AggregateType* parent      = NULL;
   SymExpr*       retTail     = toSymExpr(argList.tail);
   Type*          retType     = retTail->symbol()->type;
@@ -2178,8 +2252,7 @@ static AggregateType* createOrFindFunTypeFromAnnotation(AList&     argList,
   } else {
     FnSymbol* parentMethod = NULL;
 
-    parent       = createAndInsertFunParentClass(call,
-                                                 parent_name.c_str());
+    parent       = createAndInsertFunParentClass(call, parent_name.c_str());
     parentMethod = createAndInsertFunParentMethod(call,
                                                   parent,
                                                   argList,
@@ -2191,7 +2264,9 @@ static AggregateType* createOrFindFunTypeFromAnnotation(AList&     argList,
                                              FnSymbol*>(parent, parentMethod);
   }
 
-  return parent;
+  Type* result = getFcfSharedWrapperType(parent);
+
+  return result;
 }
 
 //
@@ -2214,7 +2289,7 @@ static Expr* dropUnnecessaryCast(CallExpr* call) {
           Type* newType = toSe->symbol()->type->getValType();
 
           if (newType == oldType) {
-            if (isUserDefinedRecord(newType) && !getSymbolImmediate(var)) {
+            if (typeNeedsCopyInitDeinit(newType) && !getSymbolImmediate(var)) {
               result = new CallExpr("_removed_cast", var);
               call->replace(result);
             } else {
@@ -2331,10 +2406,9 @@ static AggregateType* createAndInsertFunParentClass(CallExpr*   call,
 
   parentTs->addFlag(FLAG_FUNCTION_CLASS);
 
-  // Because this function type needs to be globally visible (because
-  // we don't know the modules it will be passed to), we put it at the
-  // highest scope
-  theProgram->block->body.insertAtTail(new DefExpr(parentTs));
+  // Because the general function type is potentially usable by other modules,
+  // insert it into ChapelBase.
+  baseModule->block->insertAtHead(new DefExpr(parentTs));
 
   parent->dispatchParents.add(dtObject);
 
@@ -2552,10 +2626,9 @@ static FnSymbol* createAndInsertFunParentMethod(CallExpr*      call,
   if (throws)
     parent_method->throwsErrorInit();
 
-  // Because this function type needs to be globally visible
-  // (because we don't know the modules it will be passed to), we put
-  // it at the highest scope
-  theProgram->block->body.insertAtTail(new DefExpr(parent_method));
+  // Because the parent method might be used by other modules, put it into
+  // ChapelBase.
+  baseModule->block->insertAtHead(new DefExpr(parent_method));
 
   normalize(parent_method);
 

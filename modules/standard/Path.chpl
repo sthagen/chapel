@@ -65,7 +65,7 @@
 module Path {
 
 private use List;
-use SysError;
+use SysError, IO;
 private use Sys;
 
 /* Represents generally the current directory. This starts as the directory
@@ -164,9 +164,7 @@ proc basename(name: string): string {
    :return: The longest common path prefix.
    :rtype: `string`
 */
-// NOTE: Add in intent here to temporarily fix compiler memory leak related
-// to use of varargs.
-proc commonPath(in paths: string ...?n): string {
+proc commonPath(paths: string ...?n): string {
   var result: string = "";    // result string
   var inputLength = n;   // size of input array
   var firstPath = paths(1);
@@ -360,7 +358,7 @@ proc dirname(name: string): string {
            if (h != 1) {
              value = "${" + env_var + "}";
            } else {
-             value = value_c: string;
+             value = createStringWithNewBuffer(value_c);
            }
            res += value;
          }
@@ -377,7 +375,7 @@ proc dirname(name: string): string {
          if (h != 1) {
            value = "$" + env_var;
          } else {
-           value = value_c: string;
+           value = createStringWithNewBuffer(value_c);
          }
          res += value;
          if (ind <= path_p.numBytes) {
@@ -470,9 +468,7 @@ private proc joinPathComponent(comp: string, ref result: string) {
             present.
    :rtype: `string`
 */
-// NOTE: Add in intent here to temporarily fix compiler memory leak related
-// to use of varargs.
-proc joinPath(in paths: string ...?n): string {
+proc joinPath(paths: string ...?n): string {
   var result: string;
 
   for path in paths do

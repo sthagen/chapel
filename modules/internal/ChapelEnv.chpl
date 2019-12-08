@@ -30,7 +30,8 @@
 
  */
 module ChapelEnv {
-  use ChapelStandard;
+  private use String;
+  private use ChapelStandard;
 
   /* See :ref:`readme-chplenv.CHPL_HOME` for more information. */
   param CHPL_HOME:string            = __primitive("get compiler variable", "CHPL_HOME");

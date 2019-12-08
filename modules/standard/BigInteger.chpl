@@ -166,6 +166,7 @@ See :mod:`GMP` for more information on how to use GMP with Chapel.
 module BigInteger {
   use GMP;
   private use HaltWrappers;
+  private use SysCTypes;
 
   enum Round {
     DOWN = -1,
@@ -410,7 +411,7 @@ module BigInteger {
       return ret;
     }
 
-    proc writeThis(writer) {
+    proc writeThis(writer) throws {
       var s: string;
 
       if _local {

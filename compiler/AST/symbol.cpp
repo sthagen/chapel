@@ -33,6 +33,7 @@
 #include "resolveIntents.h"
 #include "resolution.h"
 #include "stringutil.h"
+#include "wellknown.h"
 
 #include <algorithm>
 
@@ -209,7 +210,15 @@ bool Symbol::isParameter() const {
 }
 
 bool Symbol::isRenameable() const {
-  return !(hasFlag(FLAG_EXPORT) || hasFlag(FLAG_EXTERN));
+  // we can't rename symbols that we're exporting or that are extern
+  // because the other language will require the name to be as specified.
+  // and we can't rename symbols that say not to.
+  if (hasFlag(FLAG_EXPORT) ||
+      hasFlag(FLAG_EXTERN) ||
+      hasFlag(FLAG_NO_RENAME)) {
+    return false;
+  }
+  return true;
 }
 
 bool Symbol::isRef() {
@@ -258,6 +267,13 @@ void Symbol::removeFlag(Flag flag) {
 
 bool Symbol::hasEitherFlag(Flag aflag, Flag bflag) const {
   return hasFlag(aflag) || hasFlag(bflag);
+}
+
+bool Symbol::isKnownToBeGeneric() {
+  if (FnSymbol* fn = toFnSymbol(this))
+    return fn->isGenericIsValid() && fn->isGeneric();
+  else
+    return hasFlag(FLAG_GENERIC);
 }
 
 // Don't generate documentation for this symbol, either because it is private,
@@ -409,18 +425,15 @@ Expr* Symbol::getInitialization() const {
 
   while (stmt != NULL) {
     std::vector<SymExpr*> symExprs;
-    collectSymExprs(stmt, symExprs);
+    collectSymExprsFor(stmt, curSym, refSym, symExprs);
 
     bool isDef = false;
     bool isUse = false;
 
     for_vector(SymExpr, se, symExprs) {
-      Symbol* sym = se->symbol();
-      if (sym == curSym || sym == refSym) {
         int result = isDefAndOrUse(se);
         isDef |= (result & 1);
         isUse |= (result & 2);
-      }
     }
 
     if (isDef) {
@@ -472,10 +485,6 @@ bool isString(Symbol* symbol) {
 
 bool isBytes(Symbol* symbol) {
   return isBytes(symbol->type);
-}
-
-bool isUserDefinedRecord(Symbol* symbol) {
-  return isUserDefinedRecord(symbol->type);
 }
 
 /******************************** | *********************************
@@ -1003,6 +1012,9 @@ void ShadowVarSymbol::accept(AstVisitor* visitor) {
     outerVarSE->accept(visitor);
   if (specBlock)
     specBlock->accept(visitor);
+
+  svInitBlock->accept(visitor);
+  svDeinitBlock->accept(visitor);
 }
 
 ShadowVarSymbol* ShadowVarSymbol::copyInner(SymbolMap* map) {
@@ -1479,7 +1491,13 @@ VarSymbol *new_StringSymbol(const char *str) {
   // DefExpr(s) always goes into the module scope to make it a global
   stringLiteralModule->block->insertAtTail(stringLitDef);
 
-  CallExpr *initCall = new CallExpr(astr("createStringWithBorrowedBuffer"),
+  Expr* initFn = NULL;
+  if (gChplCreateStringWithLiteral != NULL)
+    initFn = new SymExpr(gChplCreateStringWithLiteral);
+  else
+    initFn = new UnresolvedSymExpr("chpl_createStringWithLiteral");
+
+  CallExpr *initCall = new CallExpr(initFn,
                                     cstrTemp,
                                     new_IntSymbol(strLength));
 
