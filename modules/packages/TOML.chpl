@@ -36,8 +36,9 @@ module TOML {
 
 private use List;
 private use Map;
-use TomlParser;
+public use TomlParser;
 private use TomlReader;
+use IO;
 
 
 /* Receives a TOML file as a parameter and outputs a Toml object.
@@ -575,7 +576,7 @@ used to recursively hold tables and respective values
       dt: datetime,
       dom: domain(1),
       arr: [dom] unmanaged Toml,
-      A: map(false, string, unmanaged Toml),
+      A: map(string, unmanaged Toml, false),
       tag: fieldtag;
 
     // Empty
@@ -804,7 +805,7 @@ used to recursively hold tables and respective values
 
 
     /* Write a Table to channel f in TOML format */
-    override proc writeThis(f) {
+    override proc writeThis(f) throws {
       writeTOML(f);
     }
 
@@ -858,7 +859,7 @@ used to recursively hold tables and respective values
 
     pragma "no doc"
     /* Flatten tables into flat associative array for writing */
-    proc flatten(ref flat: map(false, string, unmanaged Toml), rootKey = '') : flat.type {
+    proc flatten(ref flat: map(string, unmanaged Toml, false), rootKey = '') : flat.type {
       for (k, v) in this.A.items() {
         if v.tag == fieldToml {
           var fullKey = k;
@@ -871,7 +872,7 @@ used to recursively hold tables and respective values
     }
 
     pragma "no doc"
-    proc printTables(ref flat: map(false, string, unmanaged Toml), f:channel) {
+    proc printTables(ref flat: map(string, unmanaged Toml, false), f:channel) {
       if flat.contains('root') {
         f.writeln('[root]');
         printValues(f, flat['root']);
@@ -1293,7 +1294,7 @@ module TomlReader {
       }
     }
 
-    proc readWriteThis(f) {
+    proc readWriteThis(f) throws {
       // TODO: The `list` type currently doesn't support readWriteThis!
       f <~> this.A.toArray();
     }

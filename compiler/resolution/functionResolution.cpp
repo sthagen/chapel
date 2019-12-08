@@ -113,8 +113,6 @@ SymbolMap                          paramMap;
 
 Vec<CallExpr*>                     callStack;
 
-Vec<BlockStmt*>                    standardModuleSet;
-
 std::map<Type*,     FnSymbol*>     autoCopyMap;
 std::map<Type*,     Serializers>   serializeMap;
 
@@ -161,12 +159,6 @@ static bool canParamCoerce(Type* actualType, Symbol* actualSym, Type* formalType
 static bool
 moreSpecific(FnSymbol* fn, Type* actualType, Type* formalType);
 static BlockStmt* getParentBlock(Expr* expr);
-static bool
-isMoreVisibleInternal(BlockStmt* block, FnSymbol* fn1, FnSymbol* fn2,
-                      Vec<BlockStmt*>& visited);
-static bool
-isMoreVisible(Expr* expr, FnSymbol* fn1, FnSymbol* fn2);
-static void reissueCompilerWarning(const char* str, int offset, bool err);
 
 static void resolveTupleExpand(CallExpr* call);
 static void resolveSetMember(CallExpr* call);
@@ -179,7 +171,6 @@ static void resolveAutoCopyEtc(AggregateType* at);
 
 static Expr* foldTryCond(Expr* expr);
 
-static void computeStandardModuleSet();
 static void unmarkDefaultedGenerics();
 static void resolveUses(ModuleSymbol* mod);
 static void resolveSupportForModuleDeinits();
@@ -718,6 +709,10 @@ bool canInstantiate(Type* actualType, Type* formalType) {
   }
 
   if (formalType == dtAnyReal && is_real_type(actualType)) {
+    return true;
+  }
+
+  if (formalType == dtAnyPOD && !propagateNotPOD(actualType)) {
     return true;
   }
 
@@ -1953,7 +1948,7 @@ static CallExpr* userCall(CallExpr* call) {
   return call;
 }
 
-static void reissueCompilerWarning(const char* str, int offset, bool err) {
+static CallExpr* reissueCompilerWarning(const char* str, int offset, bool err) {
   //
   // Disable compiler warnings in internal modules that are triggered
   // within a dynamic dispatch context because of potential user
@@ -1962,7 +1957,7 @@ static void reissueCompilerWarning(const char* str, int offset, bool err) {
   if (!err && inDynamicDispatchResolution)
     if (callStack.tail()->getModule()->modTag == MOD_INTERNAL &&
         callStack.head()->getModule()->modTag == MOD_INTERNAL)
-      return;
+      return NULL;
 
   CallExpr* from = NULL;
   for (int i = callStack.n-offset; i >= 0; i--) {
@@ -1974,6 +1969,10 @@ static void reissueCompilerWarning(const char* str, int offset, bool err) {
         !from->getFunction()->hasFlag(FLAG_COMPILER_GENERATED))
       break;
   }
+  return from;
+}
+
+static void reissueMsgHelp(CallExpr* from, const char* str, bool err) {
   if (err) {
     USR_FATAL(from, "%s", str);
   } else {
@@ -2572,6 +2571,8 @@ Type* computeDecoratedManagedType(AggregateType* canonicalClassType,
   resolveCall(typeCall);
   Type* ret = typeCall->typeInfo();
   typeCall->remove();
+
+  INT_ASSERT(ret && ret != dtUnknown);
   return ret;
 }
 
@@ -2901,12 +2902,28 @@ static Type* resolveTypeSpecifier(CallInfo& info) {
   Type* ret = NULL;
 
   SymExpr* ts = toSymExpr(call->baseExpr);
-  AggregateType* at = toAggregateType(canonicalClassType(ts->typeInfo()));
-  DecoratedClassType* dt = toDecoratedClassType(ts->typeInfo());
+  Type* tsType = ts->typeInfo();
+  AggregateType* at = toAggregateType(canonicalClassType(tsType));
+  ClassTypeDecorator decorator = CLASS_TYPE_BORROWED_NONNIL;
+  bool decorated = false;
+  if (DecoratedClassType* dt = toDecoratedClassType(ts->typeInfo())) {
+    decorated = true;
+    decorator = dt->getDecorator();
+    // Convert 'managed' to 'generic' -
+    // type will be wrapped with 'owned' e.g. after borrowed type is computed.
+    if (isDecoratorManaged(decorator)) {
+      if (isDecoratorNonNilable(decorator))
+        decorator = CLASS_TYPE_GENERIC_NONNIL;
+      else if (isDecoratorNilable(decorator))
+        decorator = CLASS_TYPE_GENERIC_NILABLE;
+      else
+        decorator = CLASS_TYPE_GENERIC;
+    }
+  }
 
-  if (isPrimitiveType(ts->typeInfo())) {
+  if (isPrimitiveType(tsType)) {
     USR_FATAL_CONT(info.call, "illegal type index expression '%s'", info.toString());
-    USR_PRINT(info.call, "primitive type '%s' cannot be used in an index expression", ts->typeInfo()->symbol->name);
+    USR_PRINT(info.call, "primitive type '%s' cannot be used in an index expression", tsType->symbol->name);
     USR_STOP();
   } else if (at->symbol->hasFlag(FLAG_TUPLE)) {
     SymbolMap subs;
@@ -2915,16 +2932,21 @@ static Type* resolveTypeSpecifier(CallInfo& info) {
     }
   } else {
     ret = at->generateType(info.call, info.toString());
-    if (ret && dt) {
-      ret = getDecoratedClass(ret, dt->getDecorator());
+    if (ret && decorated) {
+      // Include the decorator in the type
+      ret = getDecoratedClass(ret, decorator);
       INT_ASSERT(ret);
-    } else if (ret && isManagedPtrType(ts->typeInfo())) {
+    }
+
+    if (ret && isManagedPtrType(tsType)) {
       // For owned/shared types, resolve the canonical class type specifier and
       // re-wrap the resulting type in owned or shared.
-      AggregateType* managed = toAggregateType(ts->typeInfo());
-      if (managed->instantiatedFrom) {
-        AggregateType* root = managed->getRootInstantiation();
-        CallExpr* again = new CallExpr(root->symbol, ret->symbol);
+      AggregateType* manager = getManagedPtrManagerType(tsType);
+      if (isManagedPtrType(ret)) {
+        // It's already a managed pointer type
+        INT_ASSERT(manager == getManagedPtrManagerType(ret));
+      } else {
+        CallExpr* again = new CallExpr(manager->symbol, ret->symbol);
         info.call->getStmtExpr()->insertBefore(again);
         resolveCall(again);
         ret = again->typeInfo();
@@ -3482,10 +3504,13 @@ static void reissueMsgs(FnSymbol* resolvedFn,
                         std::map<FnSymbol*, const char*>& outerMap,
                         bool err) {
   std::map<FnSymbol*, const char*>::iterator it;
+  CallExpr *from1 = NULL, *from2 = NULL;
+  const char *str1 = NULL, *str2 = NULL;
 
   it = innerMap.find(resolvedFn);
   if (it != innerMap.end()) {
-    reissueCompilerWarning(it->second, 2, err);
+    str1 = it->second;
+    from1 = reissueCompilerWarning(it->second, 2, err);
 
     if (callStack.n >= 2) {
       if (FnSymbol* fn = callStack.v[callStack.n - 2]->resolvedFunction()) {
@@ -3496,7 +3521,20 @@ static void reissueMsgs(FnSymbol* resolvedFn,
 
   it = outerMap.find(resolvedFn);
   if (it != outerMap.end()) {
-    reissueCompilerWarning(it->second, 1, err);
+    str2 = it->second;
+    from2 = reissueCompilerWarning(it->second, 1, err);
+  }
+
+  // avoid duplicates and "This source location is a guess."
+  if (str1 || str2) {
+    if ((str1 == str2) && !err && (!from1 || !from2)) {
+      if (from1) reissueMsgHelp(from1, str1, err);
+      else       reissueMsgHelp(from2, str2, err);
+
+    } else {
+      if (str1) reissueMsgHelp(from1, str1, err);
+      if (str2) reissueMsgHelp(from2, str2, err);
+    }
   }
 }
 
@@ -3798,7 +3836,7 @@ static void generateUnresolvedMsg(CallInfo& info, Vec<FnSymbol*>& visibleFns) {
       if (i > nPrintDetails)
         break;
 
-      explainCandidateRejection(info, visibleFns.v[0]);
+      explainCandidateRejection(info, fn);
     }
 
     i = 0;
@@ -4549,6 +4587,14 @@ disambiguateByMatch(Vec<ResolutionCandidate*>&   candidates,
       } else {
         EXPLAIN("X: Fn %d is a as good a match as Fn %d\n\n\n", i, j);
         singleMostSpecific = false;
+        if (notBest[j]) {
+          // Inherit the notBest status of what we are comparing against
+          //
+          // If this candidate is equally as good as something that wasn't
+          // the best, then it is also not the best (or else there is something
+          // terribly wrong with our compareSpecificity function).
+          notBest[i] = true;
+        }
         break;
       }
     }
@@ -5116,7 +5162,7 @@ static void handleTaskIntentArgs(CallInfo& info, FnSymbol* taskFn) {
 
     // Even if some formals are (now) types, if 'taskFn' remained generic,
     // gatherCandidates() would not instantiate it, for some reason.
-    taskFn->removeFlag(FLAG_GENERIC);
+    taskFn->setGeneric(false);
   }
 }
 
@@ -5777,41 +5823,6 @@ static void resolveInitField(CallExpr* call) {
   resolveSetMember(call); // Can we remove some of the above with this?
 }
 
-// Should this be public, like isNilableClassType() ?
-static bool isUnmanagedClass(Type* t) {
-  if (DecoratedClassType* dt = toDecoratedClassType(t))
-    if (dt->isUnmanaged())
-      return true;
-  return false;
-}
-
-// Should this be public, like isNilableClassType() ?
-static bool isBorrowedClass(Type* t) {
-  if (isClass(t))
-    return true; // borrowed, non-nilable
-
-  if (DecoratedClassType* dt = toDecoratedClassType(t))
-    return dt->isBorrowed();
-
-  return false;
-}
-
-// Todo: ideally this would be simply something like:
-//   isChapelManagedType(t) || isChapelBorrowedType(t)
-static bool isOwnedOrSharedOrBorrowed(Type* t) {
-  if (isClass(t))
-    return true; // borrowed, non-nilable
-
-  if (DecoratedClassType* dt = toDecoratedClassType(t))
-    if (! dt->isUnmanaged())
-      return true; // anything not unmanaged
-
-  if (isManagedPtrType(t))
-    return true; // owned or shared
-
-  return false;
-}
-
 static bool managementMismatch(Type* lhs, Type* rhs) {
   if (isManagedPtrType(lhs)) {
     if (isManagedPtrType(rhs)) {
@@ -5919,8 +5930,31 @@ static void resolveInitVar(CallExpr* call) {
   Type* targetType = NULL;
   bool addedCoerce = false;
 
+  bool inferType = call->numActuals() == 2;
+
   if (call->numActuals() > 3) {
     INT_FATAL(call, "unexpected number of actuals in variable init call");
+  }
+
+  // Handle noinit
+  if (srcExpr && srcExpr->symbol() == gNoInit) {
+    if (call->numActuals() < 3) {
+      // no init needs a type, cannot infer from gNoInit.
+      INT_FATAL(call, "bad no init call");
+    }
+
+    SymExpr* targetTypeExpr = toSymExpr(call->get(3)->remove());
+    targetType = targetTypeExpr->typeInfo();
+
+    if (targetType->symbol->hasFlag(FLAG_GENERIC)) {
+      // no init needs a concrete type, cannot infer from gNoInit.
+      INT_FATAL(call, "bad no init call");
+    }
+
+    // Since we are not initializing, just set the variable's type
+    dst->type = targetType;
+    call->primitive = primitives[PRIM_NOOP];
+    return;
   }
 
   if (call->numActuals() == 3) {
@@ -5953,8 +5987,6 @@ static void resolveInitVar(CallExpr* call) {
     // Insert a coercion if the types are different. Some internal types use a
     // coercion because their initCopy returns a different type.
     if (targetType->symbol->hasFlag(FLAG_HAS_RUNTIME_TYPE) ||
-        isSyncType(src->getValType()) ||
-        isSingleType(src->getValType()) ||
         (targetType->symbol->hasFlag(FLAG_TUPLE) && mismatch) ||
         (isRecord(targetType->getValType()) == false && mismatch)) {
 
@@ -5989,6 +6021,8 @@ static void resolveInitVar(CallExpr* call) {
   // which is handled in the 'init=' branch.
   bool isDomainWithoutNew = targetType->getValType()->symbol->hasFlag(FLAG_DOMAIN) &&
                             src->hasFlag(FLAG_INSERT_AUTO_DESTROY_FOR_EXPLICIT_NEW) == false;
+  bool initCopySyncSingle = inferType && (isSyncType(srcType->getValType()) || isSingleType(srcType->getValType()));
+  bool initCopyIter = inferType && srcType->getValType()->symbol->hasFlag(FLAG_ITERATOR_RECORD);
 
   if (dst->hasFlag(FLAG_NO_COPY) ||
       isPrimitiveScalar(targetType) ||
@@ -6006,12 +6040,11 @@ static void resolveInitVar(CallExpr* call) {
 
   } else if (isRecord(targetType->getValType()) == false ||
              isParamString ||
-             isSyncType(srcType->getValType()) ||
-             isSingleType(srcType->getValType()) ||
              targetType->getValType()->symbol->hasFlag(FLAG_ARRAY) ||
              isDomainWithoutNew ||
+             initCopySyncSingle ||
              srcType->getValType()->symbol->hasFlag(FLAG_TUPLE) ||
-             srcType->getValType()->symbol->hasFlag(FLAG_ITERATOR_RECORD)) {
+             initCopyIter) {
     // These cases require an initCopy to implement special initialization
     // semantics (e.g. reading a sync for variable initialization).
     //
@@ -6054,8 +6087,8 @@ static void resolveInitVar(CallExpr* call) {
       call->primitive = primitives[PRIM_MOVE];
 
       resolveMove(call);
-    } else if (isRecordWithInitializers(at) == false) {
-      INT_FATAL("Unable to initialize record variable with type '%s'", at->symbol->name);
+    } else if (isRecordOrUnionWithInitializers(at) == false) {
+      INT_FATAL("Unable to initialize record/union variable with type '%s'", at->symbol->name);
     } else if (targetType->getValType() == srcType->getValType() &&
                targetType->getValType()->symbol->hasFlag(FLAG_POD)) {
       dst->type = targetType->getValType();
@@ -6789,6 +6822,7 @@ static void resolveNew(CallExpr* newExpr) {
   //  dtUnmanaged for 'new unmanaged'
   //  owned record for 'new owned'
   //  shared record for 'new shared'
+  //  dtAnyManagementNilable to request nilable variant
   Type* manager = NULL;
 
   resolveNewSetupManaged(newExpr, manager);
@@ -6843,7 +6877,8 @@ static void checkManagerType(Type* t) {
   //  - unmanaged or unmanagedNilable
   //  - owned or DecoratedClassType(owned,?)  (or other management type)
   if (t == dtBorrowed || t == dtBorrowedNilable ||
-      t == dtUnmanaged || t == dtUnmanagedNilable) {
+      t == dtUnmanaged || t == dtUnmanagedNilable ||
+      t == dtAnyManagementNilable) {
     return; // OK
   }
 
@@ -6873,26 +6908,20 @@ static void resolveNewSetupManaged(CallExpr* newExpr, Type*& manager) {
   if (SymExpr* typeExpr = resolveNewFindTypeExpr(newExpr)) {
     if (Type* type = resolveTypeAlias(typeExpr)) {
 
+      bool makeNilable = (manager == dtAnyManagementNilable ||
+                          isNilableClassType(type));
+
       // set manager for new t(1,2,3)
       // where t is e.g Owned(MyClass)
       // or for t is unmanaged(MyClass)
-      if (manager == NULL) {
+      if (manager == NULL || manager == dtAnyManagementNilable) {
         if (isManagedPtrType(type)) {
           manager = getManagedPtrManagerType(type);
-          if (isNilableClassType(type))
-            manager = getDecoratedClass(manager, CLASS_TYPE_MANAGED_NILABLE);
-
         } else if (DecoratedClassType* dt = toDecoratedClassType(type)) {
           if (dt->isUnmanaged()) {
-            if (isNilableClassType(dt))
-              manager = dtUnmanagedNilable;
-            else
-              manager = dtUnmanaged;
+            manager = dtUnmanaged;
           } else {
-            if (isNilableClassType(dt))
-              manager = getDecoratedClass(dtOwned, CLASS_TYPE_MANAGED_NILABLE);
-            else
-              manager = dtOwned;
+            manager = dtOwned;
           }
         } else if (isClass(type) && !fLegacyClasses) {
           manager = dtBorrowed;
@@ -6910,6 +6939,18 @@ static void resolveNewSetupManaged(CallExpr* newExpr, Type*& manager) {
       // only the canonical class types.
       if (manager) {
         AggregateType* at = toAggregateType(type);
+
+        // if needed, make the manager nilable
+        if (makeNilable) {
+          if (isManagedPtrType(manager))
+            manager = getDecoratedClass(manager, CLASS_TYPE_MANAGED_NILABLE);
+          else if (manager == dtUnmanaged)
+            manager = dtUnmanagedNilable;
+          else if (manager == dtBorrowed)
+            manager = dtBorrowedNilable;
+          else
+            INT_FATAL("case not handled");
+        }
 
         checkManagerType(manager);
 
@@ -7858,10 +7899,12 @@ static void resolveExprMaybeIssueError(CallExpr* call) {
       if (foundDepthVal == false || arg->defPoint != fn->formals.tail) {
         var = toVarSymbol(paramMap.get(arg));
 
-        INT_ASSERT(var                        != NULL &&
+       if         (var                        != NULL &&
                    var->immediate             != NULL &&
-                   var->immediate->const_kind == CONST_KIND_STRING);
-
+                   var->immediate->const_kind != CONST_KIND_STRING)
+        USR_FATAL(from, "arguments to compilerWarning() and compilerError(),"
+          " except for the optional depth argument, must be cast to string");
+       else
         str = astr(str, var->immediate->v_string);
       }
     }
@@ -8019,73 +8062,12 @@ static void resolveObviousGlobals() {
 }
 
 
-static void markGenericFunctions() {
-  bool changed = true;
-
-  // Iterate until all generic functions have been tagged with FLAG_GENERIC
-  while (changed == true) {
-    changed = false;
-
-    forv_Vec(FnSymbol, fn, gFnSymbols) {
-      // Returns true if status of fn is changed
-      if (fn->tagIfGeneric() == true) {
-        changed = true;
-      }
-    }
-  }
-}
-
-
-static void
-computeStandardModuleSet() {
-  // Lydia NOTE: 09/12/16 - this code does not follow the same code path used
-  // to add the standard module set to the root module's block, so misses some
-  // cases, causing qualified access to functions from certain modules (List,
-  // Search, Sort, at the time of this writing) to fail to resolve.  We
-  // should take the time to time this optimization to the code path it wishes
-  // to follow - however, I am not sure where that is occurring right now.
-
-  // Private uses will also help avoid the bug, but it is sweeping the bug under
-  // the rug rather than solving the problem at hand, and it is hard to say
-  // when the next time this code will bite us will be.
-  standardModuleSet.set_add(rootModule->block);
-  standardModuleSet.set_add(theProgram->block);
-
-  Vec<ModuleSymbol*> stack;
-  stack.add(standardModule);
-
-  while (ModuleSymbol* mod = stack.pop()) {
-    if (mod->block->useList) {
-      for_actuals(expr, mod->block->useList) {
-        UseStmt* use = toUseStmt(expr);
-        INT_ASSERT(use);
-        SymExpr* se = toSymExpr(use->src);
-        INT_ASSERT(se);
-        if (ModuleSymbol* usedMod = toModuleSymbol(se->symbol())) {
-          INT_ASSERT(usedMod);
-          if (!standardModuleSet.set_in(usedMod->block)) {
-            stack.add(usedMod);
-            standardModuleSet.set_add(usedMod->block);
-          }
-        }
-      }
-    }
-  }
-}
-
-
 void resolve() {
   parseExplainFlag(fExplainCall, &explainCallLine, &explainCallModule);
 
-  computeStandardModuleSet(); // Lydia NOTE 09/12/16: is not linked to our
-  // treatment on functions included by default, leading to bugs with qualified
-  // access to symbols included in this way.
-
-  markGenericFunctions();
-
   unmarkDefaultedGenerics();
 
-  adjustInternalSymbols(); // must go after tagIfGeneric()
+  adjustInternalSymbols();
 
   resolveExterns();
 
@@ -8165,6 +8147,8 @@ void resolve() {
   }
 
   clearPartialCopyDataFnMap();
+
+  clearCoercibleCache();
 
   forv_Vec(BlockStmt, stmt, gBlockStmts) {
     stmt->useListClear();
@@ -8612,7 +8596,7 @@ static void resolveAutoCopyEtc(AggregateType* at) {
 static const char* autoCopyFnForType(AggregateType* at) {
   const char* retval = "chpl__autoCopy";
 
-  if (isUserDefinedRecord(at)                == true  &&
+  if (typeNeedsCopyInitDeinit(at)            == true  &&
       at->symbol->hasFlag(FLAG_TUPLE)        == false &&
       at->symbol->hasFlag(FLAG_ITERATOR_RECORD) == false &&
       isRecordWrappedType(at)                == false &&
@@ -8749,9 +8733,10 @@ static void resolveOther() {
   std::vector<FnSymbol*> fns = getWellKnownFunctions();
 
   for_vector(FnSymbol, fn, fns) {
-    if (fn->hasFlag(FLAG_GENERIC) == false) {
-      resolveSignatureAndFunction(fn);
-    }
+    resolveSignature(fn);
+    fn->tagIfGeneric();
+    if (! fn->isGeneric())
+      resolveFunction(fn);
   }
 }
 
@@ -8847,7 +8832,7 @@ static void insertReturnTemps() {
             VarSymbol* tmp = newTemp("_return_tmp_", fn->retType);
             DefExpr*   def = new DefExpr(tmp);
 
-            if (isUserDefinedRecord(fn->retType) == true)
+            if (typeNeedsCopyInitDeinit(fn->retType) == true)
               tmp->addFlag(FLAG_INSERT_AUTO_DESTROY);
 
             contextCallOrCall->insertBefore(def);

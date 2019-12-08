@@ -19,7 +19,7 @@
 
 pragma "atomic module"
 module NetworkAtomics {
-  use ChapelStandard;
+  private use ChapelStandard;
 
   private proc externFunc(param s: string, type T) param {
     if isInt(T)  then return "chpl_comm_atomic_" + s + "_int"  + numBits(T):string;
@@ -103,7 +103,7 @@ module NetworkAtomics {
       }
     }
 
-    proc const writeThis(x) {
+    proc const writeThis(x) throws {
       x <~> read();
     }
 
@@ -372,7 +372,7 @@ module NetworkAtomics {
       }
     }
 
-    proc const writeThis(x) {
+    proc const writeThis(x) throws {
       x <~> read();
     }
 

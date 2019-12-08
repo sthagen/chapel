@@ -588,22 +588,6 @@ buildTupleVarDeclHelp(Expr* base, BlockStmt* decls, Expr* insertPoint) {
 BlockStmt*
 buildTupleVarDeclStmt(BlockStmt* tupleBlock, Expr* type, Expr* init) {
   VarSymbol* tmp = newTemp();
-  // MPF - without FLAG_NO_COPY, normalize adds an initCopy here,
-  // but that initCopy is unnecessary because each variable will
-  // be initialized with a tuple element (and initCopy called then).
-  // For the case where type==NULL, it was causing type mismatch
-  // errors; but when type!=NULL, normalize will change to
-  // defaultOf/assign anyway and there isn't a type issue
-  if (type == NULL) {
-    tmp->addFlag(FLAG_NO_COPY);
-
-    // additionally, don't auto-destroy tmp if the RHS
-    // is another variable (vs a call).
-    // This does not correctly handle certain no-parens calls. See
-    // tuple-string-bug.chpl and tuple-string-bug-noparens.chpl
-    if (!isCallExpr(init))
-      tmp->addFlag(FLAG_NO_AUTO_DESTROY);
-  }
   int count = 1;
   for_alist(expr, tupleBlock->body) {
     if (DefExpr* def = toDefExpr(expr)) {
@@ -665,8 +649,11 @@ buildIfStmt(Expr* condExpr, Expr* thenExpr, Expr* elseExpr) {
 
 BlockStmt*
 buildExternBlockStmt(const char* c_code) {
-  BlockStmt* ret = NULL;
-  ret = buildChapelStmt(new ExternBlockStmt(c_code));
+  CallExpr* sysCTypes = new CallExpr(PRIM_ACTUALS_LIST,
+                                     new UnresolvedSymExpr("SysCTypes"));
+  BlockStmt* useSysCTypes = buildUseStmt(sysCTypes, /* private = */ false);
+  useSysCTypes->insertAtTail(new ExternBlockStmt(c_code));
+  BlockStmt* ret = buildChapelStmt(useSysCTypes);
 
   // Check that the compiler supports extern blocks
   // but skip these checks for chpldoc.
@@ -1504,6 +1491,15 @@ DefExpr* buildClassDefExpr(const char*  name,
     ts = ct->symbol;
   } else if (strcmp("_locale", name) == 0) {
     ct = installInternalType(ct, dtLocale);
+    ts = ct->symbol;
+  } else if (strcmp("_object", name) == 0) {
+    ct = installInternalType(ct, dtObject);
+    ts = ct->symbol;
+  } else if (strcmp("_owned", name) == 0) {
+    ct = installInternalType(ct, dtOwned);
+    ts = ct->symbol;
+  } else if (strcmp("_shared", name) == 0) {
+    ct = installInternalType(ct, dtShared);
     ts = ct->symbol;
   } else {
     ts = new TypeSymbol(name, ct);
