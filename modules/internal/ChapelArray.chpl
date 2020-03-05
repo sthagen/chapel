@@ -183,6 +183,8 @@ module ChapelArray {
   config param useBulkTransfer = true;
   pragma "no doc"
   config param useBulkTransferStride = true;
+  pragma "no doc"
+  config param useBulkPtrTransfer = useBulkTransfer;
 
   // Return POD values from arrays as values instead of const ref?
   pragma "no doc"
@@ -2832,7 +2834,7 @@ module ChapelArray {
                       " dimension(s) to " + newDims.size:string);
 
       for param i in 1..rank do
-        if newDims(i).length != _value.dom.dsiDim(i).length then
+        if newDims(i).size != _value.dom.dsiDim(i).size then
           halt("extent in dimension ", i, " does not match actual");
 
       const thisDomClass = this._value.dom;
@@ -2972,7 +2974,7 @@ module ChapelArray {
     }
 
     inline proc chpl__assertSingleArrayDomain(fnName: string) {
-      if this.domain._value._arrs.length != 1 then
+      if this.domain._value._arrs.size != 1 then
         halt("cannot call " + fnName +
              " on an array defined over a domain with multiple arrays");
     }
@@ -3525,7 +3527,7 @@ module ChapelArray {
   proc =(ref a: _distribution, b: _distribution) {
     if a._value == nil {
       __primitive("move", a, chpl__autoCopy(b.clone()));
-    } else if a._value._doms.length == 0 {
+    } else if a._value._doms.size == 0 {
       if a._value.type != b._value.type then
         compilerError("type mismatch in distribution assignment");
       if a._value == b._value {
@@ -3672,9 +3674,9 @@ module ChapelArray {
             bDims = b._value.dom.dsiDims();
       compilerAssert(aDims.size == bDims.size);
       for param i in 1..aDims.size {
-        if aDims(i).length != bDims(i).length then
+        if aDims(i).size != bDims(i).size then
           halt("assigning between arrays of different shapes in dimension ",
-               i, ": ", aDims(i).length, " vs. ", bDims(i).length);
+               i, ": ", aDims(i).size, " vs. ", bDims(i).size);
       }
     } else {
       // may not have dsiDims(), so can't check them as above
@@ -3709,13 +3711,53 @@ module ChapelArray {
   }
 
   inline proc chpl__uncheckedArrayTransfer(ref a: [], b:[]) {
-    if !chpl__serializeAssignment(a, b) && chpl__compatibleForBulkTransfer(a, b) {
-      if chpl__bulkTransferArray(a, b) == false {
-        chpl__transferArray(a, b);
+    var done = false;
+    if !chpl__serializeAssignment(a, b) {
+      if chpl__compatibleForBulkTransfer(a, b) {
+        done = chpl__bulkTransferArray(a, b);
       }
-    } else {
-      chpl__transferArray(a, b);
+      else if chpl__compatibleForWidePtrBulkTransfer(a, b) {
+        done = chpl__bulkTransferPtrArray(a, b);
+      }
     }
+    if !done then
+      chpl__transferArray(a, b);
+  }
+
+  proc chpl__compatibleForWidePtrBulkTransfer(a, b) param {
+    if !useBulkPtrTransfer then return false;
+
+    // TODO: for now we are limiting ourselves to default rectangulars
+    if !(a._value.isDefaultRectangular() &&
+         b._value.isDefaultRectangular()) then return false;
+
+    if a.eltType != b.eltType then return false;
+
+    // only classes have pointer assignment semantics
+    if !isClass(a.eltType) then return false;
+
+    // ownership transfer is complicated
+    if isOwnedClass(a.eltType) then return false;
+
+    // shared array assignment seems to be handled differently, but prevent them
+    // here, too, just in case.
+    if isSharedClass(a.eltType) then return false;
+
+    return true;
+  }
+
+  inline proc chpl__bulkTransferPtrArray(ref a: [], b: []) {
+    // for now assume they are both local arrays, that have the same bounds
+    const aDom = a.domain;
+    const bDom = b.domain;
+    if aDom != bDom then return false;
+
+     // TODO can we omit the following check and bulk transfer narrow
+     // pointers, too
+    if __primitive("is wide pointer", a[aDom.low]) {
+      return chpl__bulkTransferArray(a, aDom, b, bDom);
+    }
+    return false;
   }
 
   inline proc chpl__bulkTransferArray(ref a: [?AD], b : [?BD]) {
