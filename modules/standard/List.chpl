@@ -1239,7 +1239,7 @@ module List {
 
       :arg comparator: A comparator used to sort this list.
     */
-    proc ref sort(comparator=Sort.defaultComparator) {
+    proc ref sort(comparator: ?rec=Sort.defaultComparator) {
       on this {
         _enter();
 
@@ -1431,6 +1431,16 @@ module List {
       }
 
       return result;
+    }
+
+    /*
+      Returns the list's legal indices as the range ``1..this.size``.
+
+      :return: ``1..this.size``
+      :rtype: `range`
+    */
+    proc indices {
+      return 1..this.size;
     }
 
     /*
