@@ -37,6 +37,7 @@ module DefaultRectangular {
   config param debugDefaultDistBulkTransfer = false;
   config param debugDataPar = false;
   config param debugDataParNuma = false;
+  config param reportInPlaceRealloc = false;
 
   config param defaultDoRADOpt = true;
   config param defaultDisableLazyRADOpt = false;
@@ -1333,49 +1334,6 @@ module DefaultRectangular {
       }
     }
 
-    pragma "ignore transfer errors"
-    override proc dsiReallocate(allocBound: range(idxType,
-                                                  BoundedRangeType.bounded,
-                                                  stridable),
-                                arrayBound: range(idxType,
-                                                  BoundedRangeType.bounded,
-                                                  stridable)) where rank == 1 {
-      on this {
-        const allocD = {allocBound};
-        var copy = new unmanaged DefaultRectangularArr(eltType=eltType,
-                                                       rank=rank,
-                                                       idxType=idxType,
-                                                       stridable=allocD._value.stridable,
-                                                       dom=allocD._value);
-
-        forall i in arrayBound(dom.ranges(1)) do
-          copy.dsiAccess(i) = dsiAccess(i);
-
-        off = copy.off;
-        blk = copy.blk;
-        str = copy.str;
-        factoredOffs = copy.factoredOffs;
-
-        dsiDestroyArr();
-        data = copy.data;
-        // We can't call initShiftedData here because the new domain
-        // has not yet been updated (this is called from within the
-        // = function for domains.
-        if earlyShiftData && !allocD._value.stridable {
-          // Lydia note 11/04/15: a question was raised as to whether this
-          // check on numIndices added any value.  Performance results
-          // from removing this line seemed inconclusive, which may indicate
-          // that the check is not necessary, but it seemed like unnecessary
-          // work for something with no immediate reward.
-          if allocD.size > 0 {
-            shiftedData = copy.shiftedData;
-          }
-        }
-        delete copy;
-      }
-    }
-
-
     // Reallocate the array to have space for elements specified by `bounds`
     pragma "ignore transfer errors"
     override proc dsiReallocate(bounds: rank*range(idxType,
@@ -1384,36 +1342,55 @@ module DefaultRectangular {
       on this {
         const allocD = {(...bounds)};
 
-        var copy = new unmanaged DefaultRectangularArr(eltType=eltType,
-                                            rank=rank,
-                                            idxType=idxType,
-                                            stridable=allocD._value.stridable,
-                                            dom=allocD._value);
+        // For now, we'll use realloc for 1D, non-empty arrays when
+        // the low bounds and strides of the old and new domains
+        // match; and when the element type is POD or the array is
+        // growing (i.e.,(doesn't require deinit to be called).
+        if (rank == 1 &&
+            allocD.low == dom.dsiLow && allocD.stride == dom.dsiStride &&
+            dom.dsiNumIndices > 0 && allocD.size > 0 &&
+            (isPODType(eltType) || allocD.size > dom.dsiNumIndices)) {
+          if reportInPlaceRealloc then
+            writeln("reallocating in-place");
 
-        forall i in allocD((...dom.ranges)) do
-          copy.dsiAccess(i) = dsiAccess(i);
+          sizesPerDim(1) = allocD.dsiDim(1).size;
+          _ddata_reallocate(data,
+                            eltType,
+                            oldSize=dom.dsiNumIndices,
+                            newSize=allocD.size);
+          initShiftedData();
+        } else {
+          var copy = new unmanaged DefaultRectangularArr(eltType=eltType,
+                                                         rank=rank,
+                                                         idxType=idxType,
+                                                         stridable=allocD._value.stridable,
+                                                         dom=allocD._value);
 
-        off = copy.off;
-        blk = copy.blk;
-        str = copy.str;
-        factoredOffs = copy.factoredOffs;
+          forall i in allocD((...dom.ranges)) do
+            copy.dsiAccess(i) = dsiAccess(i);
 
-        dsiDestroyArr();
-        data = copy.data;
-        // We can't call initShiftedData here because the new domain
-        // has not yet been updated (this is called from within the
-        // = function for domains.
-        if earlyShiftData && !allocD._value.stridable {
-          // Lydia note 11/04/15: a question was raised as to whether this
-          // check on numIndices added any value.  Performance results
-          // from removing this line seemed inconclusive, which may indicate
-          // that the check is not necessary, but it seemed like unnecessary
-          // work for something with no immediate reward.
-          if allocD.size > 0 {
-            shiftedData = copy.shiftedData;
+          off = copy.off;
+          blk = copy.blk;
+          str = copy.str;
+          factoredOffs = copy.factoredOffs;
+
+          dsiDestroyArr();
+          data = copy.data;
+          // We can't call initShiftedData here because the new domain
+          // has not yet been updated (this is called from within the
+          // = function for domains.
+          if earlyShiftData && !allocD._value.stridable {
+            // Lydia note 11/04/15: a question was raised as to whether this
+            // check on numIndices added any value.  Performance results
+            // from removing this line seemed inconclusive, which may indicate
+            // that the check is not necessary, but it seemed like unnecessary
+            // work for something with no immediate reward.
+            if allocD.size > 0 {
+              shiftedData = copy.shiftedData;
+            }
           }
+          delete copy;
         }
-        delete copy;
       }
     }
 
