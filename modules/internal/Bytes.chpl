@@ -1,5 +1,6 @@
 /*
- * Copyright 2004-2020 Hewlett Packard Enterprise Development LP
+ * Copyright 2020 Hewlett Packard Enterprise Development LP
+ * Copyright 2004-2019 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -1064,19 +1065,20 @@ module Bytes {
       Returns a UTF-8 string from the given :record:`bytes`. If the data is
       malformed for UTF-8, `policy` argument determines the action.
       
-      :arg policy: `decodePolicy.strict` raises an error, `decodePolicy.replace`
-                   replaces the malformed character with UTF-8 replacement
-                   character, `decodePolicy.drop` drops the data silently,
-                   `decodePolicy.escape` escapes each illegal byte with private
-                   use codepoints
+      :arg policy: - `decodePolicy.strict` raises an error
+                   - `decodePolicy.replace` replaces the malformed character
+                     with UTF-8 replacement character
+                   - `decodePolicy.drop` drops the data silently
+                   - `decodePolicy.escape` escapes each illegal byte with
+                     private use codepoints
       
       :throws: `DecodeError` if `decodePolicy.strict` is passed to the `policy`
                argument and the :record:`bytes` contains non-UTF-8 characters.
 
       :returns: A UTF-8 string.
     */
-    // NOTE: In the future this could support more encodings.
     proc decode(policy=decodePolicy.strict): string throws {
+      // NOTE: In the future this method could support more encodings.
       var localThis: bytes = this.localize();
       return decodeByteBuffer(localThis.buff, localThis.len, policy);
     }

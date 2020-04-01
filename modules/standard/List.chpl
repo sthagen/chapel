@@ -1,5 +1,6 @@
 /*
- * Copyright 2004-2020 Hewlett Packard Enterprise Development LP
+ * Copyright 2020 Hewlett Packard Enterprise Development LP
+ * Copyright 2004-2019 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -100,6 +101,23 @@ module List {
     }
   }
 
+  /* Check that element type is supported by list */
+  proc _checkType(type eltType) {
+    // Also unsupported but not checked: tuples of non-nilable class types
+    if isBorrowedClass(eltType) {
+      compilerError('list element type cannot currently be borrowed');
+    }
+    if isGenericType(eltType) {
+      compilerWarning("creating a list with element type " +
+                      eltType:string);
+      if isClassType(eltType) && !isGenericType(borrowed eltType) {
+        compilerWarning("which now means class type with generic management");
+      }
+      compilerError("list element type cannot currently be generic");
+      // In the future we might support it if the list is not default-inited
+    }
+  }
+
   private use IO;
 
   /*
@@ -147,6 +165,7 @@ module List {
       :type parSafe: `param bool`
     */
     proc init(type eltType, param parSafe=false) {
+      _checkType(eltType);
       this.eltType = eltType;
       this.parSafe = parSafe;
       this.complete();
@@ -156,7 +175,7 @@ module List {
     /*
       Initializes a list containing elements that are copy initialized from
       the elements contained in another list.
-      
+
       Used in new expressions.
 
       :arg other: The list to initialize from.
@@ -167,7 +186,6 @@ module List {
     proc init(other: list(?t), param parSafe=false) {
       if !isCopyableType(this.type.eltType) then
         compilerError("Cannot copy list with element type that cannot be copied");
-
       this.eltType = t;
       this.parSafe = parSafe;
       this.complete();
@@ -186,6 +204,7 @@ module List {
       :type parSafe: `param bool`
     */
     proc init(other: [?d] ?t, param parSafe=false) {
+      _checkType(t);
       if !isCopyableType(t) then
         compilerError("Cannot construct list from array with element type that cannot be copied");
 
@@ -212,6 +231,7 @@ module List {
       :type parSafe: `param bool`
     */
     proc init(other: range(?t), param parSafe=false) {
+      _checkType(t);
       this.eltType = t;
       this.parSafe = parSafe;
 
@@ -284,6 +304,7 @@ module List {
       this.complete();
       _commonInitFromIterable(other);
     }
+
 
     pragma "no doc"
     proc _commonInitFromIterable(iterable) {
@@ -632,21 +653,17 @@ module List {
       :return: A reference to the first item in this list.
       :rtype: `ref eltType`
     */
-    proc ref first() ref throws {
-      // Hack to initialize a reference (may be invalid memory).
-      ref result = _getRef(1);
+    proc ref first() ref {
+      _enter();
 
-      on this {
-        _enter();
-
-        if boundsChecking && _size == 0 {
-          _leave();
-          boundsCheckHalt("Called \"list.first\" on an empty list.");
-        }
-
-        result = _getRef(1);
+      if boundsChecking && _size == 0 {
         _leave();
+        boundsCheckHalt("Called \"list.first\" on an empty list.");
       }
+
+      // TODO: How to make this work with on clauses?
+      ref result = _getRef(1);
+      _leave();
 
       return result;
     }
@@ -664,22 +681,18 @@ module List {
       :rtype: `ref eltType`
     */
     proc ref last() ref {
-      // Hack to initialize a reference (may be invalid memory).
-      ref result = _getRef(1);
+      _enter();
 
-      on this {
-        _enter();
-
-        if boundsChecking && _size == 0 {
-          _leave();
-          boundsCheckHalt("Called \"list.last\" on an empty list.");
-        }
-
-        result = _getRef(_size);
+      if boundsChecking && _size == 0 {
         _leave();
+        boundsCheckHalt("Called \"list.last\" on an empty list.");
       }
-    
-      return result;
+     
+      // TODO: How to make this work with on clauses?
+      ref result = _getRef(_size);
+      _leave();
+
+      return result;  
     }
 
     pragma "no doc"

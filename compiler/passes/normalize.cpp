@@ -1,5 +1,6 @@
 /*
- * Copyright 2004-2020 Hewlett Packard Enterprise Development LP
+ * Copyright 2020 Hewlett Packard Enterprise Development LP
+ * Copyright 2004-2019 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -2746,8 +2747,6 @@ static void errorIfSplitInitializationRequired(DefExpr* def, Expr* cur) {
 
   if (canDefaultInit == false) {
     const char* name = def->sym->name;
-    FnSymbol* initFn = def->getModule()->initFn;
-    bool global = (initFn && def->parentExpr == initFn->body);
 
     // Don't give errors for compiler generated functions at this time.
     FnSymbol* inFn = def->getFunction();
@@ -2787,9 +2786,7 @@ static void errorIfSplitInitializationRequired(DefExpr* def, Expr* cur) {
       }
     }
 
-    if (global) {
-      USR_FATAL_CONT(def, "split initialization is not supported for globals");
-    } else if (cur) {
+    if (cur) {
       if (def->exprType == NULL || genericType != NULL) {
         USR_PRINT(cur,
                   "'%s' use here prevents split-init from establishing the type",

@@ -1,5 +1,6 @@
 /*
- * Copyright 2004-2020 Hewlett Packard Enterprise Development LP
+ * Copyright 2020 Hewlett Packard Enterprise Development LP
+ * Copyright 2004-2019 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -2000,6 +2001,14 @@ static Expr* preFoldNamed(CallExpr* call) {
           // Handle casting between numeric types
           if (imm != NULL && (fromEnum || fromIntEtc) && toIntEtc) {
             Immediate coerce = getDefaultImmediate(newType);
+
+            if (fWarnUnstable && fromEnum && !toIntUint) {
+              if (is_bool_type(newType)) {
+                USR_WARN(call, "enum-to-bool casts are likely to be deprecated in the future");
+              } else {
+                USR_WARN(call, "enum-to-float casts are likely to be deprecated in the future");
+              }
+            }
 
             coerce_immediate(imm, &coerce);
 
