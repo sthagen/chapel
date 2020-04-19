@@ -483,7 +483,7 @@ static Expr* preFoldPrimOp(CallExpr* call) {
 
     int64_t n = testCaptureVector.size();
     if (index <= 0 || index > n) {
-      USR_FATAL(call, "index '%i' out of bounds, expected to be between '1' and '%i'",
+      USR_FATAL(call, "index '%" PRId64 "' out of bounds, expected to be between '1' and '%" PRId64 "'",
                 index, n);
     }
 
@@ -648,7 +648,7 @@ static Expr* preFoldPrimOp(CallExpr* call) {
     if (name == NULL) {
       USR_FATAL(call,
                 "'%d' is not a valid field number for %s",
-                fieldNum,
+                fieldNum-1,
                 toString(classType));
     }
 
@@ -720,7 +720,7 @@ static Expr* preFoldPrimOp(CallExpr* call) {
       // specified.  This is the user's error.
       USR_FATAL(call,
                 "'%d' is not a valid field number for %s",
-                fieldNum,
+                fieldNum-1,
                 toString(classType));
     }
 
@@ -1905,7 +1905,7 @@ static Expr* preFoldNamed(CallExpr* call) {
       }
 
       if (index < 0 || index > at->fields.length-2) {
-        USR_FATAL(call, "type index expression '%i' out of bounds (0..%d)", index, at->fields.length-2);
+        USR_FATAL(call, "type index expression '%" PRId64 "' out of bounds (0..%d)", index, at->fields.length-2);
       }
 
       sprintf(field, "x%" PRId64, index);
@@ -2186,14 +2186,14 @@ static Expr* resolveTupleIndexing(CallExpr* call, Symbol* baseVar) {
   if (get_int(call->get(3), &index)) {
     sprintf(field, "x%" PRId64, index);
     if (index < 0 || index >= baseType->fields.length-1) {
-      USR_FATAL_CONT(call, "tuple index %ld is out of bounds", index);
+      USR_FATAL_CONT(call, "tuple index %" PRId64 " is out of bounds", index);
       if (index < 0) zero_error = true;
       error = true;
     }
   } else if (get_uint(call->get(3), &uindex)) {
     sprintf(field, "x%" PRIu64, uindex);
     if (uindex >= (unsigned long)baseType->fields.length-1) {
-      USR_FATAL_CONT(call, "tuple index %lu is out of bounds", uindex);
+      USR_FATAL_CONT(call, "tuple index %" PRIu64 " is out of bounds", uindex);
       error = true;
     }
   } else {

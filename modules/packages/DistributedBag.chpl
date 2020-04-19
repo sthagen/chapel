@@ -126,6 +126,7 @@ module DistributedBag {
   public use Collection;
   use BlockDist;
   private use SysCTypes;
+  use IO only channel;
 
   /*
     Below are segment statuses, which is a way to make visible to outsiders the
@@ -225,11 +226,11 @@ module DistributedBag {
   record DistBag {
     type eltType;
 
+    // This is unused, and merely for documentation purposes. See '_value'.
     /*
       The implementation of the Bag is forwarded. See :class:`DistributedBagImpl` for
       documentation.
     */
-    // This is unused, and merely for documentation purposes. See '_value'.
     var _impl : unmanaged DistributedBagImpl(eltType)?;
 
     // Privatized id...
@@ -254,7 +255,19 @@ module DistributedBag {
       }
       return chpl_getPrivatizedCopy(unmanaged DistributedBagImpl(eltType), _pid);
     }
-
+  
+    pragma "no doc"
+    /* Read/write the contents of DistBag from/to a channel */ 
+    proc readWriteThis(ch: channel) throws {
+      ch <~> "[";
+      var size = this.getSize();
+      for (i,iteration) in zip(this, 0..<size) {
+        ch <~> i;
+        if iteration < size-1 then ch <~> ", ";
+      }
+      ch <~> "]";
+    }
+    
     forwarding _value;
   }
 
