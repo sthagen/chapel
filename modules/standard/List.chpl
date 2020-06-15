@@ -102,6 +102,7 @@ module List {
   }
 
   /* Check that element type is supported by list */
+  pragma "no doc"
   proc _checkType(type eltType) {
     if isGenericType(eltType) {
       compilerWarning("creating a list with element type " +
@@ -575,18 +576,19 @@ module List {
     }
 
     //
-    // Move all elements at and following the index `shift` left in memory
-    // so that they begin at index `idx`, possibly resizing. May release
-    // memory if possible.
+    // Shift all elements following "idx" one to the left.
+    // May release memory if possible.
     //
     // This method does not fire destructors, so do so before calling it.
     //
     pragma "no doc"
-    proc ref _collapse(idx: int, shift: int=1) {
+    proc ref _collapse(idx: int) {
       _sanity(_withinBounds(idx));
 
-      if idx == _size-1 then
+      if idx == _size-1 {
+        on this do _maybeReleaseMem(1);
         return;
+      }
       
       on this {
         for i in idx..(_size - 2) {
