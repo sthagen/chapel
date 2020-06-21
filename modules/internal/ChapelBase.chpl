@@ -22,6 +22,11 @@
 //
 
 module ChapelBase {
+
+  pragma "no doc"
+  pragma "locale private"
+  var rootLocaleInitialized: bool = false;
+
   use ChapelStandard;
   private use ChapelEnv, SysCTypes;
 
@@ -53,7 +58,6 @@ module ChapelBase {
 
 
   enum iterKind {leader, follower, standalone};
-
 
   //
   // assignment on primitive types
