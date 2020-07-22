@@ -675,6 +675,8 @@ cs-resize:
 dist-performance.cc:
   04/29/20:
     - Use workaround to enable lifetime checking for lists of borrowed classes (#15575)
+  06/27/20:
+    - Revert changes to `list._commonInitFromIterable` (#15943)
 
 distCreate-arrays-deinit.cc-perf: &distCreate-base
   02/12/20:
@@ -1301,6 +1303,8 @@ memleaksfull:
     - Use `localAccess` automatically (#15713)
   06/18/20:
     - Close a trivial test leak (#15871)
+  07/14/20:
+    - Add tests for set, map, list of arrays (#16034)
 
 meteor:
   12/18/13:
@@ -1495,6 +1499,8 @@ ptrans: &ptrans-base
     - Make BlockCyclic more parallel (#5224)
   01/27/17:
     - Fix bug in BlockCyclic indexing, convert arrays to tuples(#5229)
+  07/07/20:
+    - Distribution improvements for automatic localAccess (#15959)
 ptrans.ml-perf:
   <<: *ptrans-base
 ptrans.ml-time:
@@ -1508,6 +1514,8 @@ ra:
     - Rank change dom dist view (#5694)
   04/05/18:
     - Convert BaseDist-inheriting classes to use initializers (#9075)
+  07/15/20:
+    - Enable parallel array init for all types (#16070)
 
 ra.ml-perf:
   09/19/17:
@@ -1763,6 +1771,8 @@ testSerialReductions:
     - result of Greg's commit to let the tasking layer determine parallelism
   12/19/18:
     - Merge ExternArr and friends into DefaultRectangular (#11893)
+  07/15/20:
+    - Enable parallel array init for all types (#16070)
 
 thread-ring:
   03/19/15:
@@ -1810,6 +1820,10 @@ time_iterate:
 time-write:
   03/05/15:
     - no strings with externs update
+
+timeMapMinusEqual:
+  07/10/20:
+    - Optimize map -= operation (#16038)
 
 views-forall-iter:
   10/12/17:
@@ -1904,12 +1918,17 @@ arkouda: &arkouda-base
   04/22/20:
     - Optimize coargsort for numeric arrays (mhmerrill/arkouda#330)
   04/28/20:
-    - Improve comm=none build and execution speed (mhmerrill/arkouda#358)
-  04/28/20:
+    - text: Improve comm=none build and execution speed (mhmerrill/arkouda#358)
+      config: chapcs
     - text: Move XC testing from login to elogin node
       config: 16-node-xc
   05/20/20:
     - Upgrade Arkouda release testing from 1.20 to 1.22 (#15690)
+  07/01/20:
+    - Translate pdarray setops to server-side operations (mhmerrill/arkouda#392)
+  07/02/20:
+    - Reduce fragmentation for large allocations (#15992)
+
 
 arkouda-comp:
   <<: *arkouda-base
