@@ -49,46 +49,52 @@ proc masonTest(args) throws {
   var show = false;
   var run = true;
   var parallel = false;
-  var update = true;
-  if MASON_OFFLINE then update = false;
+  var skipUpdate = MASON_OFFLINE;
   var compopts: list(string);
   var searchSubStrings: list(string);
-  var countArgs = 0;
-  for arg in args {
+  var countArgs = args.indices.low+2;
+  for arg in args[args.indices.low+2..args.indices.high] {
     countArgs += 1;
-    if countArgs > 2 {
-      if arg == '-h' || arg == '--help' {
+    select (arg) {
+      when '-h'{
         masonTestHelp();
         exit(0);
       }
-      else if arg == '--show' {
+      when '--help'{
+        masonTestHelp();
+        exit(0);
+      }
+      when '--show'{
         show = true;
       }
-      else if arg == '--no-run' {
+      when '--no-run'{
         run = false;
       }
-      else if arg == '--parallel' {
+      when '--parallel' {
         parallel = true;
       }
-      else if arg == '--' {
+      when '--' {
         throw new owned MasonError("Testing does not support -- syntax");
       }
-      else if arg == '--no-update' {
-        update = false;
-      }
-      else if arg == '--keep-binary' {
+      when '--keep-binary' {
         keepExec = true;
       }
-      else if arg == '--recursive' {
+      when '--recursive' {
         subdir = true;
       }
-      else if arg == '--update' {
-        update = true;
+      when '--update' {
+        skipUpdate = false;
       }
-      else if arg.startsWith('--setComm=') {
-        setComm = arg['--setComm='.size+1..];
+      when '--no-update' {
+        skipUpdate = true;
       }
-      else {
+      when '--setComm' {
+        setComm = args[countArgs];
+      }
+      otherwise {
+        if arg.startsWith('--setComm='){
+          setComm = arg['--setComm='.size..];
+        }
         try! {
           if isFile(arg) && arg.endsWith(".chpl") {
             files.append(arg);
@@ -108,8 +114,6 @@ proc masonTest(args) throws {
   }
 
   getRuntimeComm();
-  var uargs: list(string);
-  if !update then uargs.append('--no-update');
   try! {
     const cwd = getEnv("PWD");
     const projectHome = getProjectHome(cwd);
@@ -165,7 +169,7 @@ proc masonTest(args) throws {
       }
     }
 
-    UpdateLock(uargs);
+    updateLock(skipUpdate);
     compopts.append("".join("--comm=",comm));
     runTests(show, run, parallel, compopts);
   }

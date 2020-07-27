@@ -171,17 +171,17 @@ and :proc:`~string.rfind()` return a :record:`byteIndex`.
 
  */
 module String {
-  private use ChapelStandard;
-  private use SysCTypes;
-  private use ByteBufferHelpers;
-  private use BytesStringCommon;
-  private use SysBasic;
+  use ChapelStandard;
+  use SysCTypes;
+  use ByteBufferHelpers;
+  use BytesStringCommon;
+  use SysBasic;
 
-  public use CString;
+  use CString;
   public use StringCasts;
   public use BytesStringCommon only encodePolicy;  // expose encodePolicy
 
-  private use NVStringFactory;
+  use NVStringFactory;
 
   pragma "fn synchronization free"
   private extern proc qio_decode_char_buf(ref chr:int(32),
@@ -360,139 +360,86 @@ module String {
   proc chpl__idxTypeToIntIdxType(type idxType: codepointIndex) type
     return int;
 
-  pragma "no doc"
-  inline proc >(x: ?t, y: t)
-    where t == byteIndex || t == codepointIndex
-    return x: int > y: int;
+  pragma "no doc" inline proc >(x: byteIndex, y: byteIndex)           return x: int > y: int;
+  pragma "no doc" inline proc >(x: codepointIndex, y: codepointIndex) return x: int > y: int;
 
-  pragma "no doc"
-  inline proc >(x: ?t, y: int)
-    where t == byteIndex || t == codepointIndex
-    return x: int > y;
+  pragma "no doc" inline proc >(x: byteIndex,      y: int) return x: int > y;
+  pragma "no doc" inline proc >(x: codepointIndex, y: int) return x: int > y;
 
-  pragma "no doc"
-  inline proc >(x: int, y: ?t)
-    where t == byteIndex || t == codepointIndex
-    return x > y: int;
+  pragma "no doc" inline proc >(x: int, y: byteIndex)      return x > y: int;
+  pragma "no doc" inline proc >(x: int, y: codepointIndex) return x > y: int;
   // End range helper support
 
   // Index arithmetic support
+
   // index + int or int + index --> index
-  pragma "no doc"
-  inline proc +(x: ?t, y: int)
-    where t == byteIndex || t == codepointIndex
-    return (x: int + y): t;
+  pragma "no doc" inline proc +(x: byteIndex,      y: int) return (x: int + y): byteIndex;
+  pragma "no doc" inline proc +(x: codepointIndex, y: int) return (x: int + y): codepointIndex;
 
-  pragma "no doc"
-  inline proc +(x: int, y: ?t)
-    where t == byteIndex || t == codepointIndex
-    return (x + y: int): t;
+  pragma "no doc" inline proc +(x: int, y: byteIndex)      return (x + y: int): byteIndex;
+  pragma "no doc" inline proc +(x: int, y: codepointIndex) return (x + y: int): codepointIndex;
 
-  pragma "no doc"
-  inline proc +(x: bufferType, y: byteIndex) {
-    return x+(y:int);
-  }
+  pragma "no doc" inline proc +(x: bufferType, y: byteIndex) return x+(y:int);
 
   // index - int --> index
-  pragma "no doc"
-  inline proc -(x: ?t, y: int)
-    where t == byteIndex || t == codepointIndex
-    return (x: int - y): t;
+  pragma "no doc" inline proc -(x: byteIndex,      y: int) return (x: int - y): byteIndex;
+  pragma "no doc" inline proc -(x: codepointIndex, y: int) return (x: int - y): codepointIndex;
 
   // index - index --> int
-  pragma "no doc"
-  inline proc -(x: ?t, y: t)
-    where t == byteIndex || t == codepointIndex
-    return x: int - y: int;
+  pragma "no doc" inline proc -(x: byteIndex, y: byteIndex)           return x: int - y: int;
+  pragma "no doc" inline proc -(x: codepointIndex, y: codepointIndex) return x: int - y: int;
 
   // other relationals
-  pragma "no doc"
-  inline proc <(x: ?t, y: t)
-    where t == byteIndex || t == codepointIndex
-    return x: int < y: int;
+  pragma "no doc" inline proc <(x: byteIndex, y: byteIndex)           return x: int < y: int;
+  pragma "no doc" inline proc <(x: codepointIndex, y: codepointIndex) return x: int < y: int;
 
-  pragma "no doc"
-  inline proc <(x: ?t, y: int)
-    where t == byteIndex || t == codepointIndex
-    return x: int < y;
+  pragma "no doc" inline proc <(x: byteIndex,      y: int) return x: int < y;
+  pragma "no doc" inline proc <(x: codepointIndex, y: int) return x: int < y;
 
-  pragma "no doc"
-  inline proc <(x: int, y: ?t)
-    where t == byteIndex || t == codepointIndex
-    return x < y: int;
+  pragma "no doc" inline proc <(x: int, y: byteIndex)      return x < y: int;
+  pragma "no doc" inline proc <(x: int, y: codepointIndex) return x < y: int;
 
-  pragma "no doc"
-  inline proc >=(x: ?t, y: t)
-    where t == byteIndex || t == codepointIndex
-    return x: int >= y: int;
+  pragma "no doc" inline proc >=(x: byteIndex, y: byteIndex)           return x: int >= y: int;
+  pragma "no doc" inline proc >=(x: codepointIndex, y: codepointIndex) return x: int >= y: int;
 
-  pragma "no doc"
-  inline proc >=(x: ?t, y: int)
-    where t == byteIndex || t == codepointIndex
-    return x: int >= y;
+  pragma "no doc" inline proc >=(x: byteIndex, y: int)      return x: int >= y;
+  pragma "no doc" inline proc >=(x: codepointIndex, y: int) return x: int >= y;
 
-  pragma "no doc"
-  inline proc >=(x: int, y: ?t)
-    where t == byteIndex || t == codepointIndex
-    return x >= y: int;
+  pragma "no doc" inline proc >=(x: int, y: byteIndex)      return x >= y: int;
+  pragma "no doc" inline proc >=(x: int, y: codepointIndex) return x >= y: int;
 
-  pragma "no doc"
-  inline proc <=(x: ?t, y: t)
-    where t == byteIndex || t == codepointIndex
-    return x: int <= y: int;
+  pragma "no doc" inline proc <=(x: byteIndex, y: byteIndex)           return x: int <= y: int;
+  pragma "no doc" inline proc <=(x: codepointIndex, y: codepointIndex) return x: int <= y: int;
 
-  pragma "no doc"
-  inline proc <=(x: ?t, y: int)
-    where t == byteIndex || t == codepointIndex
-    return x: int <= y;
+  pragma "no doc" inline proc <=(x: byteIndex, y: int)      return x: int <= y;
+  pragma "no doc" inline proc <=(x: codepointIndex, y: int) return x: int <= y;
 
-  pragma "no doc"
-  inline proc <=(x: int, y: ?t)
-    where t == byteIndex || t == codepointIndex
-    return x <= y: int;
+  pragma "no doc" inline proc <=(x: int, y: byteIndex)      return x <= y: int;
+  pragma "no doc" inline proc <=(x: int, y: codepointIndex) return x <= y: int;
 
-  pragma "no doc"
-  inline proc ==(x: ?t, y: t)
-    where t == byteIndex || t == codepointIndex
-    return (x:int) == (y:int);
+  pragma "no doc" inline proc ==(x: byteIndex, y: byteIndex)           return (x:int) == (y:int);
+  pragma "no doc" inline proc ==(x: codepointIndex, y: codepointIndex) return (x:int) == (y:int);
 
-  pragma "no doc"
-  inline proc ==(x: ?t, y: int)
-    where t == byteIndex || t == codepointIndex
-    return (x:int) == y;
+  pragma "no doc" inline proc ==(x: byteIndex,      y: int) return (x:int) == y;
+  pragma "no doc" inline proc ==(x: codepointIndex, y: int) return (x:int) == y;
 
-  pragma "no doc"
-  inline proc ==(x: int, y: ?t)
-    where t == byteIndex || t == codepointIndex
-    return x == (y:int);
+  pragma "no doc" inline proc ==(x: int, y: byteIndex)      return x == (y:int);
+  pragma "no doc" inline proc ==(x: int, y: codepointIndex) return x == (y:int);
 
-  pragma "no doc"
-  inline proc !=(x: ?t, y: t)
-    where t == byteIndex || t == codepointIndex
-    return (x:int) != (y:int);
+  pragma "no doc" inline proc !=(x: byteIndex, y: byteIndex)           return (x:int) != (y:int);
+  pragma "no doc" inline proc !=(x: codepointIndex, y: codepointIndex) return (x:int) != (y:int);
 
-  pragma "no doc"
-  inline proc !=(x: ?t, y: int)
-    where t == byteIndex || t == codepointIndex
-    return (x:int) != y;
+  pragma "no doc" inline proc !=(x: byteIndex, y: int)      return (x:int) != y;
+  pragma "no doc" inline proc !=(x: codepointIndex, y: int) return (x:int) != y;
 
-  pragma "no doc"
-  inline proc !=(x: int, y: ?t)
-    where t == byteIndex || t == codepointIndex
-    return x != (y:int);
+  pragma "no doc" inline proc !=(x: int, y: byteIndex)      return x != (y:int);
+  pragma "no doc" inline proc !=(x: int, y: codepointIndex) return x != (y:int);
 
-  pragma "no doc"
-  inline proc !(x: ?t)
-    where t == byteIndex || t == codepointIndex
-    return !(x:int);
+  pragma "no doc" inline proc !(x: byteIndex)      return !(x:int);
+  pragma "no doc" inline proc !(x: codepointIndex) return !(x:int);
 
-  pragma "no doc"
-  inline proc _cond_test(x: byteIndex)
-    return x != 0;
-
-  pragma "no doc"
-  inline proc _cond_test(x: codepointIndex)
-    return x != 0;
+  pragma "no doc" inline proc _cond_test(x: byteIndex)      return x != 0;
+  pragma "no doc" inline proc _cond_test(x: codepointIndex) return x != 0;
   // End index arithmetic support
 
   private proc validateEncoding(buf, len): int throws {
@@ -800,8 +747,8 @@ module String {
   // submodule can be `private use`d from other String-supporting modules.
   pragma "no doc"
   module NVStringFactory {
-    private use BytesStringCommon;
-    private use ByteBufferHelpers only bufferType;
+    use BytesStringCommon;
+    use ByteBufferHelpers only bufferType;
 
     inline proc chpl_createStringWithNewBufferNV(x: bufferType,
                                                  length: int,
@@ -2378,13 +2325,13 @@ module String {
   //
 
   pragma "no doc"
-  inline proc _cast(type t, cs: c_string) where t == bufferType {
+  inline proc _cast(type t: bufferType, cs: c_string) {
     return __primitive("cast", t, cs);
   }
 
   // Cast from c_string to string
   pragma "no doc"
-  proc _cast(type t, cs: c_string) where t == string {
+  proc _cast(type t: string, cs: c_string) {
     try {
       return createStringWithNewBuffer(cs);
     }
