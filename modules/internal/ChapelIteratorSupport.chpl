@@ -383,7 +383,7 @@ module ChapelIteratorSupport {
   pragma "no implicit copy"
   inline proc _toLeader(ir: _iteratorRecord)
     where __primitive("has leader", ir)
-    return chpl__autoCopy(__primitive("to leader", ir));
+    return chpl__autoCopy(__primitive("to leader", ir), definedConst=false);
 
   pragma "suppress lvalue error"
   pragma "fn returns iterator"
@@ -404,7 +404,8 @@ module ChapelIteratorSupport {
   pragma "no implicit copy"
   pragma "fn returns iterator"
   inline proc _toStandalone(iterator: _iteratorClass)
-    return chpl__autoCopy(__primitive("to standalone", iterator));
+    return chpl__autoCopy(__primitive("to standalone", iterator),
+                          definedConst=false);
 
   pragma "fn returns iterator"
   inline proc _toStandalone(ir: _iteratorRecord) {
@@ -432,7 +433,8 @@ module ChapelIteratorSupport {
   pragma "expand tuples with values"
   pragma "fn returns iterator"
   inline proc _toLeader(ir: _iteratorRecord, args...) {
-    return chpl__autoCopy(__primitive("to leader", ir, (...args)));
+    return chpl__autoCopy(__primitive("to leader", ir, (...args)),
+                          definedConst=false);
   }
 
   pragma "suppress lvalue error"
@@ -455,7 +457,8 @@ module ChapelIteratorSupport {
   pragma "expand tuples with values"
   pragma "fn returns iterator"
   inline proc _toStandalone(iterator: _iteratorClass, args...)
-    return chpl__autoCopy(__primitive("to standalone", iterator, (...args)));
+    return chpl__autoCopy(__primitive("to standalone", iterator,
+                                             (...args)), definedConst=false);
 
   pragma "expand tuples with values"
   pragma "fn returns iterator"
@@ -636,7 +639,8 @@ module ChapelIteratorSupport {
   pragma "no implicit copy"
   pragma "fn returns iterator"
   inline proc _toFollower(iterator: _iteratorClass, leaderIndex)
-    return chpl__autoCopy(__primitive("to follower", iterator, leaderIndex));
+    return chpl__autoCopy(__primitive("to follower", iterator,
+                                             leaderIndex), definedConst=false);
 
   pragma "fn returns iterator"
   inline proc _toFollower(ir: _iteratorRecord, leaderIndex) {
@@ -674,7 +678,9 @@ module ChapelIteratorSupport {
   pragma "no implicit copy"
   pragma "fn returns iterator"
   inline proc _toFastFollower(iterator: _iteratorClass, leaderIndex, fast: bool) {
-    return chpl__autoCopy(__primitive("to follower", iterator, leaderIndex, true));
+    return chpl__autoCopy(__primitive("to follower", iterator,
+                                      leaderIndex, true),
+                          definedConst=false);
   }
 
   pragma "fn returns iterator"
@@ -790,7 +796,7 @@ module ChapelIteratorSupport {
 
      .. code-block:: c
 
-         CHPL_PRAGMA_IVDEP
+         // this loop hinted as order-independent
          for (i=0; i<=10; i+=1) {}
 
      The ``vectorizeOnly`` iterator  automatically handles zippering, so the
@@ -832,18 +838,21 @@ module ChapelIteratorSupport {
   // standalone versions
   //
   pragma "no doc"
+  pragma "vectorize yielding loops"
   iter vectorizeOnly(param tag: iterKind, iterables...)
     where tag == iterKind.standalone && singleValIter(iterables) {
     for i in iterables(0) do yield i;
   }
 
   pragma "no doc"
+  pragma "vectorize yielding loops"
   iter vectorizeOnly(param tag: iterKind, iterables...) ref
     where tag == iterKind.standalone && singleRefIter(iterables) {
     for i in iterables(0) do yield i;
   }
 
   pragma "no doc"
+  pragma "vectorize yielding loops"
   iter vectorizeOnly(param tag: iterKind, iterables...?numiterables)
     where tag == iterKind.standalone && numiterables > 1  {
     for i in zip((...iterables)) do yield i;
@@ -876,18 +885,21 @@ module ChapelIteratorSupport {
   // follower versions
   //
   pragma "no doc"
+  pragma "vectorize yielding loops"
   iter vectorizeOnly(param tag: iterKind, followThis, iterables...)
     where tag == iterKind.follower && singleValIter(iterables) {
       for i in iterables(0) do yield i;
   }
 
   pragma "no doc"
+  pragma "vectorize yielding loops"
   iter vectorizeOnly(param tag: iterKind, followThis, iterables...) ref
     where tag == iterKind.follower && singleRefIter(iterables) {
       for i in iterables(0) do yield i;
   }
 
   pragma "no doc"
+  pragma "vectorize yielding loops"
   iter vectorizeOnly(param tag: iterKind, followThis, iterables...?numiterables)
     where tag == iterKind.follower && numiterables > 1 {
     for i in zip((...iterables)) do yield i;

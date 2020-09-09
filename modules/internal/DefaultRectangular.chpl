@@ -138,7 +138,8 @@ module DefaultRectangular {
       //
       // The code below is copied from the contents of the "proc =".
       const nd = new dmap(new unmanaged DefaultDist());
-      __primitive("move", defaultDist, chpl__autoCopy(nd.clone()));
+      __primitive("move", defaultDist, chpl__autoCopy(nd.clone(),
+                                                      definedConst=false));
     }
   }
 
@@ -201,6 +202,7 @@ module DefaultRectangular {
       chpl_assignDomainWithGetSetIndices(this, rhs);
     }
 
+    pragma "order independent yielding loops"
     iter these_help(param d: int) /*where storageOrder == ArrayStorageOrder.RMO*/ {
       if d == rank-1 {
         for i in ranges(d) do
@@ -233,6 +235,7 @@ module DefaultRectangular {
     }
 */
 
+    pragma "order independent yielding loops"
     iter these_help(param d: int, block) /*where storageOrder == ArrayStorageOrder.RMO*/ {
       if d == block.size-1 {
         for i in block(d) do
@@ -500,6 +503,7 @@ module DefaultRectangular {
       }
     }
 
+    pragma "order independent yielding loops"
     iter these(param tag: iterKind, followThis,
                tasksPerLocale = dataParTasksPerLocale,
                ignoreRunning = dataParIgnoreRunningTasks,
@@ -724,6 +728,7 @@ module DefaultRectangular {
       }
     }
 
+    pragma "order independent yielding loops"
     iter dsiLocalSubdomains(loc: locale) {
       yield dsiLocalSubdomain(loc);
     }
@@ -1146,6 +1151,7 @@ module DefaultRectangular {
       for elem in chpl__serialViewIter(this, dom) do yield elem;
     }
 
+    pragma "order independent yielding loops"
     iter these(param tag: iterKind,
                tasksPerLocale = dataParTasksPerLocale,
                ignoreRunning = dataParIgnoreRunningTasks,
@@ -1175,6 +1181,7 @@ module DefaultRectangular {
         yield followThis;
     }
 
+    pragma "order independent yielding loops"
     iter these(param tag: iterKind, followThis,
                tasksPerLocale = dataParTasksPerLocale,
                ignoreRunning = dataParIgnoreRunningTasks,
@@ -1545,11 +1552,13 @@ module DefaultRectangular {
       }
     }
 
+    pragma "order independent yielding loops"
     iter dsiLocalSubdomains(loc: locale) {
       yield dsiLocalSubdomain(loc);
     }
   }
 
+  pragma "order independent yielding loops"
   iter chpl__serialViewIter(arr, viewDom) ref
     where chpl__isDROrDRView(arr) {
     param useCache = chpl__isArrayView(arr) && arr.shouldUseIndexCache();
@@ -1608,6 +1617,7 @@ module DefaultRectangular {
     for elem in chpl__serialViewIterHelper(arr, viewDom) do yield elem;
   }
 
+  pragma "order independent yielding loops"
   iter chpl__serialViewIterHelper(arr, viewDom) ref {
     for i in viewDom {
       const dataIdx = if arr.isReindexArrayView() then chpl_reindexConvertIdx(i, arr.dom, arr.downdom)
@@ -2229,11 +2239,27 @@ module DefaultRectangular {
   }
 
   // A helper routine that will perform a pointer swap on an array
-  // instead of doing a deep copy of that array.
-  proc DefaultRectangularArr.doiSwap(arr) {
-    this.data <=> arr.data;
-    this.initShiftedData();
-    arr.initShiftedData();
+  // instead of doing a deep copy of that array. Returns true
+  // if used the optimized swap, false otherwise
+  proc DefaultRectangularArr.doiOptimizedSwap(other) {
+   // Get shape of array
+    var size1: rank*(this.dom.ranges(0).intIdxType);
+    for (i, r) in zip(0..#this.dom.ranges.size, this.dom.ranges) do
+      size1(i) = r.size;
+
+    // Get shape of array
+    var size2: rank*(other.dom.ranges(0).intIdxType);
+    for (i, r) in zip(0..#other.dom.ranges.size, other.dom.ranges) do
+      size2(i) = r.size;
+    
+    if(this.locale == other.locale &&
+       size1 == size2) {
+      this.data <=> other.data;
+      this.initShiftedData();
+      other.initShiftedData();
+      return true;
+    }
+    return false;
   }
 
   // A helper routine to take the first parallel scan over a vector
