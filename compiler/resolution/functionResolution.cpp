@@ -46,6 +46,7 @@
 #include "iterator.h"
 #include "lifetime.h"
 #include "ModuleSymbol.h"
+#include "optimizations.h"
 #include "ParamForLoop.h"
 #include "PartialCopyData.h"
 #include "passes.h"
@@ -3065,6 +3066,7 @@ static FnSymbol* resolveNormalCall(CallExpr* call, check_state_t checkState);
 
 static void      findVisibleFunctionsAndCandidates(
                                      CallInfo&                  info,
+                                     VisibilityInfo&            visInfo,
                                      Vec<FnSymbol*>&            visibleFns,
                                      Vec<ResolutionCandidate*>& candidates);
 
@@ -3418,18 +3420,19 @@ static FnSymbol* resolveNormalCall(CallInfo& info, check_state_t checkState) {
   ResolutionCandidate*      bestCref   = NULL;
   ResolutionCandidate*      bestVal    = NULL;
 
+  VisibilityInfo            visInfo(info);
   int                       numMatches = 0;
 
   FnSymbol*                 retval     = NULL;
 
-  findVisibleFunctionsAndCandidates(info, mostApplicable, candidates);
+  findVisibleFunctionsAndCandidates(info, visInfo, mostApplicable, candidates);
 
-  numMatches = disambiguateByMatch(info,
-                                   candidates,
+  numMatches = disambiguateByMatch(info, candidates,
+                                   bestRef, bestCref, bestVal);
 
-                                   bestRef,
-                                   bestCref,
-                                   bestVal);
+  if (checkState == CHECK_NORMAL_CALL && numMatches > 0 && visInfo.inPOI())
+    updateCacheInfosForACall(visInfo,
+                             bestRef, bestCref, bestVal);
 
   // If no candidates were found and it's a method, try forwarding
   if (candidates.n                  == 0 &&
@@ -4083,8 +4086,8 @@ struct ExampleCandidateComparator {
     ResolutionCandidate* a = new ResolutionCandidate(aFn);
     ResolutionCandidate* b = new ResolutionCandidate(bFn);
 
-    a->isApplicable(info);
-    b->isApplicable(info);
+    a->isApplicable(info, NULL);
+    b->isApplicable(info, NULL);
 
     if (failedCandidateIsBetterMatch(a, b))
       ret = true;
@@ -4332,11 +4335,15 @@ static void generateUnresolvedMsg(CallInfo& info, Vec<FnSymbol*>& visibleFns) {
 //
 typedef std::vector<FnSymbol*> LastResortCandidates;
 
-// add a null separator if needed
+// add a null separator
 static void markEndOfPOI(LastResortCandidates& lrc) {
-  if (int sz = (int) lrc.size())
-    if (lrc[sz-1] != NULL)
-      lrc.push_back(NULL);
+  lrc.push_back(NULL);
+}
+
+// do we have any LRCs to look at?
+static bool haveAnyLRCs(LastResortCandidates& lrc, int poiDepth) {
+  // discount (visInfo.poiDepth+1) nulls that are separators
+  return (int)lrc.size() > (poiDepth + 1);
 }
 
 // do we have more LRCs to look at?
@@ -4345,20 +4352,24 @@ static bool haveMoreLRCs(LastResortCandidates& lrc, int numVisited) {
 }
 
 static void filterCandidate (CallInfo&                  info,
+                             VisibilityInfo&            visInfo,
                              FnSymbol*                  fn,
                              Vec<ResolutionCandidate*>& candidates);
 
 static void gatherCandidates(CallInfo&                  info,
+                             VisibilityInfo&            visInfo,
                              FnSymbol*                  fn,
                              Vec<ResolutionCandidate*>& candidates);
 
-static void gatherCandidatesAndLastResort(CallInfo& info,
+static void gatherCandidatesAndLastResort(CallInfo&     info,
+                             VisibilityInfo&            visInfo,
                              Vec<FnSymbol*>&            visibleFns,
                              int&                       numVisited,
                              LastResortCandidates&      lrc,
                              Vec<ResolutionCandidate*>& candidates);
 
 static void gatherLastResortCandidates(CallInfo&                  info,
+                                       VisibilityInfo&            visInfo,
                                        LastResortCandidates&      lrc,
                                        int&                       numVisited,
                                        Vec<ResolutionCandidate*>& candidates);
@@ -4446,8 +4457,18 @@ void trimVisibleCandidates(CallInfo&       info,
   trimVisibleCandidates(info, mostApplicable, numVisitedVis, visibleFns);
 }
 
+void advanceCurrStart(VisibilityInfo& visInfo) {
+  INT_ASSERT((int)visInfo.instnPoints.size() == visInfo.poiDepth);
+  if (visInfo.nextPOI != NULL)
+    visInfo.instnPoints.push_back(visInfo.nextPOI);
+
+  visInfo.currStart = visInfo.nextPOI;
+  visInfo.nextPOI = NULL;
+}
+
 static void findVisibleFunctionsAndCandidates(
                                 CallInfo&                  info,
+                                VisibilityInfo&            visInfo,
                                 Vec<FnSymbol*>&            mostApplicable,
                                 Vec<ResolutionCandidate*>& candidates) {
   CallExpr* call = info.call;
@@ -4461,7 +4482,7 @@ static void findVisibleFunctionsAndCandidates(
     handleTaskIntentArgs(info, fn);
 
     // no need for trimVisibleCandidates() and findVisibleCandidates()
-    gatherCandidates(info, fn, candidates);
+    gatherCandidates(info, visInfo, fn, candidates);
 
     explainGatherCandidate(info, candidates);
 
@@ -4475,29 +4496,37 @@ static void findVisibleFunctionsAndCandidates(
   int numVisitedVis = 0, numVisitedMA = 0;
   LastResortCandidates lrc;
   std::set<BlockStmt*> visited;
-  VisibilityInfo visInfo;
   visInfo.currStart = getVisibilityScope(call);
+  INT_ASSERT(visInfo.poiDepth == -1); // we have not used it
 
   do {
+    visInfo.poiDepth++;
+
     findVisibleFunctions(info, &visInfo, &visited,
                          &numVisitedVis, visibleFns);
 
     trimVisibleCandidates(info, mostApplicable,
                           numVisitedVis, visibleFns);
 
-    gatherCandidatesAndLastResort(info, mostApplicable, numVisitedMA,
+    gatherCandidatesAndLastResort(info, visInfo, mostApplicable, numVisitedMA,
                                   lrc, candidates);
 
-    visInfo.currStart = visInfo.nextPOI;
-    visInfo.nextPOI = NULL;
+    advanceCurrStart(visInfo);
   }
   while
     (candidates.n == 0 && visInfo.currStart != NULL);
 
-  // If needed, look at "last resort" candidates.
-  int numVisitedLRC = 0;
-  while (candidates.n == 0 && haveMoreLRCs(lrc, numVisitedLRC)) {
-    gatherLastResortCandidates(info, lrc, numVisitedLRC, candidates);
+  // If we have not found any candidates after traversing all POIs,
+  // look at "last resort" candidates, if any.
+  if (candidates.n == 0 && haveAnyLRCs(lrc, visInfo.poiDepth)) {
+    visInfo.poiDepth = -1;
+    int numVisitedLRC = 0;
+    do {
+      visInfo.poiDepth++;
+      gatherLastResortCandidates(info, visInfo, lrc, numVisitedLRC, candidates);
+    }
+    while
+      (candidates.n == 0 && haveMoreLRCs(lrc, numVisitedLRC));
   }
 
   explainGatherCandidate(info, candidates);
@@ -4505,6 +4534,7 @@ static void findVisibleFunctionsAndCandidates(
 
 // run filterCandidate() on 'fn' if appropriate
 static void gatherCandidates(CallInfo&                  info,
+                             VisibilityInfo&            visInfo,
                              FnSymbol*                  fn,
                              Vec<ResolutionCandidate*>& candidates) {
       // Consider
@@ -4534,18 +4564,19 @@ static void gatherCandidates(CallInfo&                  info,
       //
 
       if (info.call->methodTag == false) {
-        filterCandidate(info, fn, candidates);
+        filterCandidate(info, visInfo, fn, candidates);
 
       } else {
         if (fn->hasFlag(FLAG_NO_PARENS) == true) {
-          filterCandidate(info, fn, candidates);
+          filterCandidate(info, visInfo, fn, candidates);
         }
       }
 }
 
 // filter non-last-resort fns into 'candidates',
 // store last-resort fns into 'lrc'
-static void gatherCandidatesAndLastResort(CallInfo& info,
+static void gatherCandidatesAndLastResort(CallInfo&     info,
+                             VisibilityInfo&            visInfo,
                              Vec<FnSymbol*>&            visibleFns,
                              int&                       numVisited,
                              LastResortCandidates&      lrc,
@@ -4555,7 +4586,7 @@ static void gatherCandidatesAndLastResort(CallInfo& info,
     if (fn->hasFlag(FLAG_LAST_RESORT))
       lrc.push_back(fn);
     else
-      gatherCandidates(info, fn, candidates);
+      gatherCandidates(info, visInfo, fn, candidates);
   }
   markEndOfPOI(lrc);
   numVisited = visibleFns.n;
@@ -4563,19 +4594,21 @@ static void gatherCandidatesAndLastResort(CallInfo& info,
 
 // run filterCandidate() on the next batch of last resort fns
 static void gatherLastResortCandidates(CallInfo&                  info,
+                                       VisibilityInfo&            visInfo,
                                        LastResortCandidates&      lrc,
                                        int&                       numVisited,
                                        Vec<ResolutionCandidate*>& candidates) {
   int idx = numVisited;
 
   for (FnSymbol* fn = lrc[idx]; fn != NULL; fn = lrc[++idx]) {
-    gatherCandidates(info, fn, candidates);
+    gatherCandidates(info, visInfo, fn, candidates);
   }
 
   numVisited = ++idx;
 }
     
 static void filterCandidate(CallInfo&                  info,
+                            VisibilityInfo&            visInfo,
                             FnSymbol*                  fn,
                             Vec<ResolutionCandidate*>& candidates) {
   ResolutionCandidate* candidate = new ResolutionCandidate(fn);
@@ -4590,7 +4623,7 @@ static void filterCandidate(CallInfo&                  info,
     }
   }
 
-  if (candidate->isApplicable(info) == true) {
+  if (candidate->isApplicable(info, &visInfo)) {
     candidates.add(candidate);
   } else {
     delete candidate;
@@ -6321,8 +6354,9 @@ static void resolveInitField(CallExpr* call) {
   Symbol* fs = NULL;
   int index = 1;
   for_fields(field, ct) {
-    if (!strcmp(field->name, name)) {
-      fs = field; break;
+    if (field->name == name) {
+      fs = field;
+      break;
     }
     index++;
   }
@@ -6379,8 +6413,7 @@ static void resolveInitField(CallExpr* call) {
     if ((fs->hasFlag(FLAG_TYPE_VARIABLE) && isTypeExpr(srcExpr)) ||
         fs->hasFlag(FLAG_PARAM) ||
         (fs->defPoint->exprType == NULL && fs->defPoint->init == NULL) ||
-        (fs->defPoint->init == NULL && fs->defPoint->exprType != NULL &&
-         ct->fieldIsGeneric(fs, ignoredHasDefault))) {
+        ct->fieldIsGeneric(fs, ignoredHasDefault)) {
       Expr* insnPt = call->getFunction()->instantiationPoint();
       AggregateType* instantiate = ct->getInstantiation(srcSym, index, insnPt);
       if (instantiate != ct) {
@@ -6399,15 +6432,54 @@ static void resolveInitField(CallExpr* call) {
       }
     } else {
       // The field is not generic.
-
       if (fs->defPoint->exprType == NULL) {
         fs->type = srcType;
       } else if (fs->defPoint->exprType) {
         Type* exprType = fs->defPoint->exprType->typeInfo();
-        if (exprType == dtUnknown)
+        if (exprType == dtUnknown) {
           fs->type = srcType;
-        else
-          fs->type = exprType;
+        } else {
+          // Try calling resolveGenericActuals in case the field is e.g. range
+          CallExpr* dummyCall = new CallExpr(PRIM_NOOP,
+                                             new SymExpr(exprType->symbol));
+          call->insertBefore(dummyCall);
+          resolveGenericActuals(dummyCall);
+          fs->type = dummyCall->get(1)->typeInfo();
+          dummyCall->remove();
+        }
+      }
+    }
+  }
+
+  if (fs->type->getValType() != srcType->getValType()) {
+    USR_FATAL_CONT(call, "Cannot replace an instantiated field "
+                         "with another type");
+    USR_PRINT(call, "field '%s' has type '%s' but is set to '%s'",
+                     fs->name,
+                     toString(fs->getValType()),
+                     toString(srcType->getValType()));
+    USR_STOP();
+  }
+  if (fs->isParameter() && srcSym->isParameter()) {
+    Symbol* dstParam = fs;
+    Symbol* srcParam = srcSym;
+    if (Symbol* s = paramMap.get(dstParam))
+      dstParam = s;
+    if (Symbol* s = paramMap.get(srcParam))
+      srcParam = s;
+
+    if (Immediate* srcImm = getSymbolImmediate(srcParam)) {
+      if (Immediate* dstImm = getSymbolImmediate(dstParam)) {
+        if (srcImm != dstImm) {
+          USR_FATAL_CONT(call, "Cannot replace an instantiated param field "
+                               "with another value");
+          VarSymbol* dstVar = toVarSymbol(dstParam);
+          VarSymbol* srcVar = toVarSymbol(srcParam);
+          if (dstVar != NULL && srcVar != NULL)
+            USR_PRINT(call, "field '%s' has value '%s' but is set to '%s'",
+                            fs->name, toString(dstVar), toString(srcVar));
+          USR_STOP();
+        }
       }
     }
   }
@@ -6427,6 +6499,8 @@ static void resolveInitField(CallExpr* call) {
   }
 
   call->primitive = primitives[PRIM_SET_MEMBER];
+
+  setDefinedConstForPrimSetMemberIfApplicable(call);
 
   resolveSetMember(call); // Can we remove some of the above with this?
 }
@@ -7721,6 +7795,8 @@ static void resolveNewSetupManaged(CallExpr* newExpr, Type*& manager) {
         } else if (DecoratedClassType* dt = toDecoratedClassType(type)) {
           if (dt->isUnmanaged()) {
             manager = dtUnmanaged;
+          } else if (dt->isBorrowed()) {
+            manager = dtBorrowed;
           } else {
             manager = dtOwned;
           }
@@ -7911,21 +7987,15 @@ static void resolveCoerce(CallExpr* call) {
 *                                                                             *
 ************************************** | *************************************/
 
-static Type* resolveGenericActual(SymExpr* se, bool decayToBorrow, bool resolvePartials = false);
-static Type* resolveGenericActual(SymExpr* se, Type* type, bool decayToBorrow);
+static Type* resolveGenericActual(SymExpr* se, bool resolvePartials = false);
+static Type* resolveGenericActual(SymExpr* se, Type* type);
 
 Type* resolveDefaultGenericTypeSymExpr(SymExpr* se) {
-  return resolveGenericActual(se, false, true);
+  return resolveGenericActual(se, /* resolvePartials */ true);
 }
 
 void resolveGenericActuals(CallExpr* call) {
   SET_LINENO(call);
-
-  bool decayToBorrow = false;
-  if (SymExpr* baseSe = toSymExpr(call->baseExpr))
-    if (TypeSymbol* ts = toTypeSymbol(baseSe->symbol()))
-      if (isManagedPtrType(ts->type))
-        decayToBorrow = true;
 
   for_actuals(actual, call) {
     Expr* safeActual = actual;
@@ -7935,16 +8005,16 @@ void resolveGenericActuals(CallExpr* call) {
     }
 
     if (SymExpr*   se = toSymExpr(safeActual))   {
-      resolveGenericActual(se, decayToBorrow);
+      resolveGenericActual(se);
     }
   }
 }
 
-static Type* resolveGenericActual(SymExpr* se, bool decayToBorrow, bool resolvePartials) {
+static Type* resolveGenericActual(SymExpr* se, bool resolvePartials) {
   Type* retval = se->typeInfo();
 
   if (TypeSymbol* ts = toTypeSymbol(se->symbol())) {
-    retval = resolveGenericActual(se, ts->type, decayToBorrow);
+    retval = resolveGenericActual(se, ts->type);
 
   } else if (VarSymbol* vs = toVarSymbol(se->symbol())) {
     if (vs->hasFlag(FLAG_TYPE_VARIABLE) == true) {
@@ -7968,7 +8038,7 @@ static Type* resolveGenericActual(SymExpr* se, bool decayToBorrow, bool resolveP
   return retval;
 }
 
-static Type* resolveGenericActual(SymExpr* se, Type* type, bool decayToBorrow) {
+static Type* resolveGenericActual(SymExpr* se, Type* type) {
   Type* retval = se->typeInfo();
 
   ClassTypeDecorator decorator = CLASS_TYPE_BORROWED_NONNIL;
@@ -7978,12 +8048,6 @@ static Type* resolveGenericActual(SymExpr* se, Type* type, bool decayToBorrow) {
     decorator = dt->getDecorator();
     if (isDecoratorUnknownManagement(decorator))
       isDecoratedGeneric = true;
-    if (decayToBorrow) {
-      if (isDecoratorNilable(decorator))
-        decorator = CLASS_TYPE_BORROWED_NILABLE;
-      else
-        decorator = CLASS_TYPE_BORROWED_NONNIL;
-    }
   }
 
   if (AggregateType* at = toAggregateType(type)) {
@@ -8281,7 +8345,9 @@ Expr* resolveExpr(Expr* expr) {
     }
 
   } else if (CallExpr* call = toCallExpr(expr)) {
+    // Most calls to resolveCall() are from here.
     retval = resolveExprPhase2(expr, fn, preFold(call));
+
   } else if (CondStmt* stmt = toCondStmt(expr)) {
     BlockStmt* then = stmt->thenStmt;
     // TODO: Should we just store a boolean field in CondStmt instead?
@@ -10885,6 +10951,13 @@ static CallExpr* createGenericRecordVarDefaultInitCall(Symbol* val,
       resolveExpr(tempCall->get(2));
       resolveExpr(tempCall);
       appendExpr = new SymExpr(temp);
+
+    } else if (isGenericField && hasDefault == true) {
+      USR_FATAL_CONT(call, "this default-initialization is not yet supported");
+      USR_PRINT(field, "field '%s' is declared with a generic type "
+                       "and also a default value",
+                       field->name);
+      USR_STOP();
 
     } else {
       INT_FATAL("Unhandled case for default-init");

@@ -89,9 +89,16 @@ if [ -z "$BUILD_CONFIGS_CALLBACK" ]; then
     export CHPL_COMM_SUBSTRATE=none
     export CHPL_TASKS=qthreads
     export CHPL_LAUNCHER=none
-    export CHPL_LIBFABRIC=libfabric
-    export CHPL_LLVM=none       # llvm requires py27 and cmake
+    export CHPL_LIBFABRIC=system
+    export CHPL_LLVM=llvm       # llvm requires py27 and cmake
     export CHPL_AUX_FILESYS=none
+
+    # We default to CHPL_LIBFABRIC=system for EX.  We need to point to
+    # a libfabric install for the builds.  On EX a module will supply
+    # this but on XC we have to reference our own.
+    if ! pkg-config --exists libfabric ; then
+      export PKG_CONFIG_PATH=${PKG_CONFIG_PATH:+${PKG_CONFIG_PATH}:}/cray/css/users/chapelu/libfabric/install/cray-xc/lib/pkgconfig
+    fi
 
     # As a general rule, more CPUs --> faster make.
     # To use all available CPUs, export CHPL_MAKE_MAX_CPU_COUNT=0 before running this setenv.
@@ -127,28 +134,22 @@ if [ -z "$BUILD_CONFIGS_CALLBACK" ]; then
     ( *runtime* )
         log_info "Building Chapel component: runtime"
 
-        compilers=gnu
+        compilers=gnu,cray
         comms=none,ofi
-        tasks=qthreads
-        launchers=slurm-srun
+        launchers=none,pals,slurm-srun
         substrates=none
         locale_models=flat
-        auxfs=none
-        regexp=re2
-        llvm=none
-        libpics=none
+        auxfs=none,lustre
+        libpics=none,pic
 
         log_info "Start build_configs $dry_run $verbose # no make target"
 
         $cwd/../build_configs.py -p $dry_run $verbose -s $cwd/$setenv -l "$project.runtime.log" \
             --target-compiler=$compilers \
             --comm=$comms \
-            --tasks=$tasks \
             --launcher=$launchers \
             --substrate=$substrates \
             --locale-model=$locale_models \
-            --regexp=$regexp \
-            --llvm=$llvm \
             --auxfs=$auxfs \
             --lib-pic=$libpics \
             -- notcompiler
@@ -340,15 +341,11 @@ else
         list_loaded_modules
     fi
 
-    #[TODO] gen_version_gcc=
-    #[TODO] gen_version_intel=
-    #[TODO] gen_version_cce=
+    gen_version_gcc=10.1.0
+    #[TODO] gen_version_intel=16.0.3.210
+    gen_version_cce=10.0.2
 
-    if [ "$CRAYPE_NETWORK_TARGET" == slingshot* ]; then
-        target_cpu_module=craype-x86-rome
-    else
-        target_cpu_module=craype-sandybridge
-    fi
+    target_cpu_module=craype-x86-rome
 
     function load_prgenv_gnu() {
 
@@ -361,7 +358,7 @@ else
 
         # load target PrgEnv with compiler version
         load_module $target_prgenv
-        #[TODO] load_module_version $target_compiler $target_version 
+        load_module_version $target_compiler $target_version
     }
 
     function load_prgenv_intel() {
@@ -375,7 +372,7 @@ else
 
         # load target PrgEnv with compiler version
         load_module $target_prgenv
-        #[TODO] load_module_version $target_compiler $target_version
+        load_module_version $target_compiler $target_version
     }
 
     function load_prgenv_cray() {
@@ -389,7 +386,7 @@ else
 
         # load target PrgEnv with compiler version
         load_module $target_prgenv
-        #[TODO] load_module_version $target_compiler $target_version
+        load_module_version $target_compiler $target_version
     }
 
     function load_target_cpu() {

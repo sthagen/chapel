@@ -170,6 +170,7 @@ module ChapelArray {
   import Reflection;
   use ChapelDebugPrint;
   use SysCTypes;
+  use ChapelPrivatization;
 
   // Explicitly use a processor atomic, as most calls to this function are
   // likely be on locale 0
@@ -186,6 +187,9 @@ module ChapelArray {
   config param useBulkTransferStride = true;
   pragma "no doc"
   config param useBulkPtrTransfer = useBulkTransfer;
+
+  pragma "no doc"
+  config param disableConstDomainOpt = false;
 
   // Return POD values from arrays as values instead of const ref?
   pragma "no doc"
@@ -1762,12 +1766,6 @@ module ChapelArray {
 
     /* Return the number of indices in this domain */
     proc size return _value.dsiNumIndices;
-    /* Deprecated - please use :proc:`size`. */
-    proc numIndices {
-      compilerWarning("'domain.numIndices' is deprecated - " +
-                      "please use 'domain.size' instead");
-      return size;
-    }
     /* Return the lowest index in this domain */
     proc low return _value.dsiLow;
     /* Return the highest index in this domain */
@@ -2805,6 +2803,10 @@ module ChapelArray {
       pragma "no auto destroy" var d = _dom((...ranges));
       d._value._free_when_no_arrs = true;
 
+      // this domain is not exposed to the user in any way, so it is actually
+      // constant
+      d._value.definedConst = true;
+
       //
       // If this is already a slice array view, we can short-circuit
       // down to the underlying array.
@@ -2835,8 +2837,13 @@ module ChapelArray {
       if boundsChecking then
         checkRankChange(args);
 
+      // as we are making this a "no copy", we won't get chpl__initCopy, and
+      // thus no chance to adjust constness. So, define the variable var, but
+      // set its constness manually
       pragma "no copy"
-      const rcdom = this.domain[(...args)];
+      var rcdom = this.domain[(...args)];
+      rcdom.definedConst = true;
+
 
       // TODO: With additional effort, we could collapse rank changes of
       // rank-change array views to a single array view, similar to what
@@ -2851,7 +2858,8 @@ module ChapelArray {
                                          // TODO: Should the array really store
                                          // these redundantly?
                                          collapsedDim=rcdom._value.collapsedDim,
-                                         idx=rcdom._value.idx);
+                                         idx=rcdom._value.idx,
+                                         ownsArrInstance=false);
 
       // this doesn't need to lock since we just created the domain d
       rcdom._value.add_arr(a, locking=false);
@@ -2952,12 +2960,6 @@ module ChapelArray {
       }
     }
 
-    /* Deprecated - please use :proc:`size`. */
-    proc numElements {
-      compilerWarning("'array.numElements' is deprecated - " +
-                      "please use 'array.size' instead");
-      return size;
-    }
     /* Return the number of elements in the array */
     proc size return _value.dom.dsiNumIndices;
 
@@ -3087,7 +3089,11 @@ module ChapelArray {
       const redistRec = new _distribution(redist);
       // redist._free_when_no_doms = true;
 
-      pragma "no copy" pragma "no auto destroy" const newDom = new _domain(redistRec, rank, updom.idxType, updom.stridable, updom.dims());
+      pragma "no copy"
+      pragma "no auto destroy"
+      const newDom = new _domain(redistRec, rank, updom.idxType,
+                                 updom.stridable, updom.dims(),
+                                 definedConst=true);
       newDom._value._free_when_no_arrs = true;
 
       // TODO: With additional effort, we could collapse reindexings of
@@ -3099,7 +3105,8 @@ module ChapelArray {
                                       _DomPid = newDom._pid,
                                       dom = newDom._instance,
                                       _ArrPid=arrpid,
-                                      _ArrInstance=arr);
+                                      _ArrInstance=arr,
+                                      ownsArrInstance=false);
       // this doesn't need to lock since we just created the domain d
       newDom._value.add_arr(x, locking=false);
       return _newArray(x);
@@ -3690,7 +3697,7 @@ module ChapelArray {
   proc =(ref a: _distribution, b: _distribution) {
     if a._value == nil {
       __primitive("move", a, chpl__autoCopy(b.clone(), definedConst=false));
-    } else if a._value._doms.size == 0 {
+    } else if a._value._doms_containing_dist == 0 {
       if a._value.type != b._value.type then
         compilerError("type mismatch in distribution assignment");
       if a._value == b._value {
@@ -5251,5 +5258,26 @@ module ChapelArray {
 
       return A;
     }
+  }
+
+  // used for passing arrays to extern procs, e.g.
+  //   extern proc foo(X: []);
+  //   var A: [1..3] real;
+  //   foo(A);
+  // 'castToVoidStar' says whether we should cast the result to c_void_ptr
+  pragma "no doc"
+  proc chpl_arrayToPtr(arr: [], param castToVoidStar: bool = false) {
+    if (!isRectangularArr(arr) || !arr.domain.dist._value.dsiIsLayout()) then
+      compilerError("Only single-locale rectangular arrays can be passed to an external routine argument with array type", errorDepth=2);
+
+    if (arr._value.locale != here) then
+      halt("An array can only be passed to an external routine from the locale on which it lives (array is on locale " + arr._value.locale.id:string + ", call was made on locale " + here.id:string + ")");
+    
+    use CPtr;
+    const ptr = c_pointer_return(arr[arr.domain.alignedLow]);
+    if castToVoidStar then
+      return ptr: c_void_ptr;
+    else
+      return ptr;
   }
 }

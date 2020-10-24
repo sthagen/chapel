@@ -18,10 +18,14 @@ clobber: FORCE
 	rm -rf install
 
 check-python:
-ifeq ($(wildcard $(PYTHON)),)
-	$(error python and pip are required to install chpldoc \
-	        and start_test dependencies. See https://www.python.org/)
-endif
+	@case `$(PYTHON) --version` in \
+	  *"Python 3"*) \
+	    ;; \
+	  *) \
+	    echo python3 and pip are required to install chpldoc \
+	         and start_test dependencies. See https://www.python.org/ \
+	    ;; \
+	esac
 
 check-exes: check-python
 
@@ -42,7 +46,7 @@ $(PIP): $(CHPL_VENV_INSTALL_DIR)
 # Install virtualenv program.
 $(CHPL_VENV_VIRTUALENV): check-exes $(PIP)
 	export PYTHONPATH="$$CHPL_PYTHONPATH:$(PIPLIBS):$$PYTHONPATH" && \
-	python $(PIP) install -U --force-reinstall --ignore-installed $(LOCAL_PIP_FLAGS) \
+	$(PYTHON) $(PIP) install -U --force-reinstall --ignore-installed $(LOCAL_PIP_FLAGS) \
 	 --prefix=$(CHPL_VENV_INSTALL_DIR) $(CHPL_PIP_INSTALL_PARAMS) $(shell cat virtualenv.txt)
 
 # Phony convenience target for installing virtualenv.
@@ -51,7 +55,7 @@ virtualenv: $(CHPL_VENV_VIRTUALENV)
 # Create the virtualenv.
 $(CHPL_VENV_VIRTUALENV_DIR): $(CHPL_VENV_VIRTUALENV)
 	export PYTHONPATH="$(PIPLIBS):$$PYTHONPATH" && \
-	python $(CHPL_VENV_VIRTUALENV) --python=$(PYTHON) $@
+	$(PYTHON) $(CHPL_VENV_VIRTUALENV) --python=$(PYTHON) $@
 
 # Phony convenience target for creating virtualenv.
 create-virtualenv: $(CHPL_VENV_VIRTUALENV_DIR)
@@ -74,29 +78,40 @@ $(CHPL_VENV_TEST_REQS): $(CHPL_VENV_VIRTUALENV_DIR)
 	export VIRTUAL_ENV=$(CHPL_VENV_VIRTUALENV_DIR) && \
 	python $(CHPL_VENV_VIRTUALENV_BIN)/pip install \
 	-U --force-reinstall $(CHPL_PIP_INSTALL_PARAMS) $(LOCAL_PIP_FLAGS) -r test-requirements.txt && \
-	python $(CHPL_VENV_VIRTUALENV) --relocatable $(CHPL_VENV_VIRTUALENV_DIR) && \
+	$(PYTHON) $(CHPL_VENV_VIRTUALENV) --relocatable $(CHPL_VENV_VIRTUALENV_DIR) && \
 	touch $(CHPL_VENV_TEST_REQS)
 
 $(CHPL_VENV_SPHINX_BUILD): $(CHPL_VENV_VIRTUALENV_DIR)
 	export PYTHONPATH="$(PIPLIBS):$$PYTHONPATH" && \
 	export PATH="$(CHPL_VENV_VIRTUALENV_BIN):$$PATH" && \
 	export VIRTUAL_ENV=$(CHPL_VENV_VIRTUALENV_DIR) && \
-	python $(CHPL_VENV_VIRTUALENV_BIN)/pip install \
+	$(PYTHON) $(CHPL_VENV_VIRTUALENV_BIN)/pip install \
 	-U --force-reinstall $(CHPL_PIP_INSTALL_PARAMS) $(LOCAL_PIP_FLAGS) -r chpldoc-requirements.txt && \
-	python $(CHPL_VENV_VIRTUALENV) --relocatable $(CHPL_VENV_VIRTUALENV_DIR)
+	$(PYTHON) $(CHPL_VENV_VIRTUALENV) --relocatable $(CHPL_VENV_VIRTUALENV_DIR)
+
+$(CHPL_VENV_C2CHAPEL_REQS): $(CHPL_VENV_VIRTUALENV_DIR)
+	export PYTHONPATH="$(PIPLIBS):$$PYTHONPATH" && \
+	export PATH="$(CHPL_VENV_VIRTUALENV_BIN):$$PATH" && \
+	export VIRTUAL_ENV=$(CHPL_VENV_VIRTUALENV_DIR) && \
+	$(PYTHON) $(CHPL_VENV_VIRTUALENV_BIN)/pip install \
+	-U --force-reinstall $(CHPL_PIP_INSTALL_PARAMS) $(LOCAL_PIP_FLAGS) -r c2chapel-requirements.txt && \
+	$(PYTHON) $(CHPL_VENV_VIRTUALENV) --relocatable $(CHPL_VENV_VIRTUALENV_DIR) && \
+	touch $(CHPL_VENV_C2CHAPEL_REQS)
 
 $(CHPL_VENV_CHPLSPELL_REQS): $(CHPL_VENV_VIRTUALENV_DIR)
 	export PYTHONPATH="$(PIPLIBS):$$PYTHONPATH" && \
 	export PATH="$(CHPL_VENV_VIRTUALENV_BIN):$$PATH" && \
 	export VIRTUAL_ENV=$(CHPL_VENV_VIRTUALENV_DIR) && \
-	python $(CHPL_VENV_VIRTUALENV_BIN)/pip install \
+	$(PYTHON) $(CHPL_VENV_VIRTUALENV_BIN)/pip install \
 	-U --force-reinstall $(CHPL_PIP_INSTALL_PARAMS) $(LOCAL_PIP_FLAGS) -r chplspell-requirements.txt && \
-	python $(CHPL_VENV_VIRTUALENV) --relocatable $(CHPL_VENV_VIRTUALENV_DIR) && \
+	$(PYTHON) $(CHPL_VENV_VIRTUALENV) --relocatable $(CHPL_VENV_VIRTUALENV_DIR) && \
 	touch $(CHPL_VENV_CHPLSPELL_REQS)
 
 test-venv: $(CHPL_VENV_TEST_REQS)
 
 chpldoc-venv: $(CHPL_VENV_SPHINX_BUILD)
+
+c2chapel-venv: $(CHPL_VENV_C2CHAPEL_REQS)
 
 chplspell-venv: $(CHPL_VENV_CHPLSPELL_REQS)
 
@@ -119,7 +134,7 @@ rm-chplspell-reqs: FORCE
 # Python installation (ie, the Python used was not installed under "/usr/...").
 # Only applicable when building a Cray Chapel module under certain conditions.
 use-system-python: FORCE
-	@./venv-use-sys-python.py $(CHPL_VENV_INSTALL_DIR)
+	@$(PYTHON) ./venv-use-sys-python.py $(CHPL_VENV_INSTALL_DIR)
 
 FORCE:
 
