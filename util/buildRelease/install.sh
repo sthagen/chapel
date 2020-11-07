@@ -275,6 +275,10 @@ myinstallfile util/config/compileline.py "$DEST_CHPL_HOME"/util/config/
 # (needed by setchplenv*, Makefiles, compileline, printchplenv wrappers)
 myinstallfile util/config/find-python.sh "$DEST_CHPL_HOME"/util/config/
 
+# copy util/config/run-in-venv.bash
+# (needed primarily by start_test)
+myinstallfile util/config/run-in-venv.bash "$DEST_CHPL_HOME"/util/config
+
 # copy util/config/fixpath.py
 # (needed by setchplenv*)
 myinstallfile util/config/fixpath.py  "$DEST_CHPL_HOME"/util/config/
