@@ -191,6 +191,9 @@ module ChapelArray {
   pragma "no doc"
   config param disableConstDomainOpt = false;
 
+  pragma "no doc"
+  config param debugOptimizedSwap = false;
+
   // Return POD values from arrays as values instead of const ref?
   pragma "no doc"
   config param PODValAccess = true;
@@ -1807,20 +1810,6 @@ module ChapelArray {
       return contains(i);
     }
 
-    pragma "no doc"
-    inline proc member(i: rank*_value.idxType) {
-      compilerWarning("domain.member is deprecated - " +
-                      "please use domain.contains instead");
-      return this.contains(i);
-    }
-
-    /* Deprecated - please use :proc:`contains`. */
-    inline proc member(i: _value.idxType ...rank) {
-      compilerWarning("domain.member is deprecated - " +
-                      "please use domain.contains instead");
-      return this.contains(i);
-    }
-
     /* Return true if this domain is a subset of ``super``. Otherwise
        returns false. */
     proc isSubset(super : domain) {
@@ -3215,12 +3204,6 @@ module ChapelArray {
              !this._value.stridable;
     }
 
-    inline proc chpl__assertSingleArrayDomain(fnName: string) {
-      if this.domain._value._arrs.size != 1 then
-        halt("cannot call " + fnName +
-             " on an array defined over a domain with multiple arrays");
-    }
-
     /* The following methods are intended to provide a list or vector style
        interface to 1D unstridable rectangular arrays.  They are only intended
        for use on arrays that have a 1:1 correspondence with their domains.
@@ -3842,14 +3825,15 @@ module ChapelArray {
   proc chpl__supportedDataTypeForBulkTransfer(x) param return true;
 
   pragma "no doc"
-  proc checkArrayShapesUponAssignment(a: [], b: []) {
+  proc checkArrayShapesUponAssignment(a: [], b: [], forSwap = false) {
     if isRectangularArr(a) && isRectangularArr(b) {
       const aDims = a._value.dom.dsiDims(),
             bDims = b._value.dom.dsiDims();
       compilerAssert(aDims.size == bDims.size);
       for param i in 0..aDims.size-1 {
         if aDims(i).size != bDims(i).size then
-          halt("assigning between arrays of different shapes in dimension ",
+          halt(if forSwap then "swapping" else "assigning",
+               " between arrays of different shapes in dimension ",
                i, ": ", aDims(i).size, " vs. ", bDims(i).size);
       }
     } else {
@@ -4405,11 +4389,24 @@ module ChapelArray {
   // Swap operator for arrays
   //
   inline proc <=>(x: [?xD], y: [?yD]) {
+    if x.rank != y.rank then
+      compilerError("rank mismatch in array swap");
+
+    if boundsChecking then
+      checkArrayShapesUponAssignment(x, y, forSwap=true);
+
     var hasSwapped: bool = false;
-    // Check if array can use optimized pointer swap
-    if Reflection.canResolveMethod(x._value, "doiOptimizedSwap", y._value) {
-      hasSwapped = x._value.doiOptimizedSwap(y._value);
+
+    // we don't want to do anything optimized for arrays with different element
+    // types, if their eltTypes can coerce to one another let the forall handle
+    // it
+    if x.eltType == y.eltType {
+      // Check if array can use optimized pointer swap
+      if Reflection.canResolveMethod(x._value, "doiOptimizedSwap", y._value) {
+        hasSwapped = x._value.doiOptimizedSwap(y._value);
+      }
     }
+
     if !hasSwapped {
       forall (a,b) in zip(x, y) do
         a <=> b;

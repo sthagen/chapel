@@ -30,6 +30,11 @@ module CPtr {
   private use SysBasic, SysError, SysCTypes;
   private import HaltWrappers;
 
+
+  /* A Chapel type alias for 'void*' in C. */
+  extern type c_void_ptr = chpl__c_void_ptr;
+
+
   /* A Chapel version of a C NULL pointer. */
   inline proc c_nil:c_void_ptr {
     return __primitive("cast", c_void_ptr, nil);
@@ -282,13 +287,12 @@ module CPtr {
   pragma "no doc"
   inline proc _cast(type t:_anyManagementAnyNilable, x:c_void_ptr) {
     if isUnmanagedClass(t) || isBorrowedClass(t) {
-      compilerWarning("cast from c_void_ptr to "+ t:string +" is deprecated");
-      compilerWarning("cast to "+ _to_nilable(t):string +" instead");
-      return __primitive("cast", t, x);
+      compilerError("invalid cast from c_void_ptr to "+ t:string +
+                    " - cast to "+ _to_nilable(t):string +" instead");
     } else {
-      compilerWarning("invalid cast from c_void_ptr to managed type " +
-                      t:string);
+      compilerError("invalid cast from c_void_ptr to managed type " + t:string);
     }
+    return __primitive("cast", t, x);
   }
 
   pragma "no doc"

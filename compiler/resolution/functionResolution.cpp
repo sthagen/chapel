@@ -6652,7 +6652,8 @@ void resolveInitVar(CallExpr* call) {
   if (srcExpr && srcExpr->symbol() == gNoInit) {
     if (call->numActuals() < 3) {
       // no init needs a type, cannot infer from gNoInit.
-      INT_FATAL(call, "bad no init call");
+      USR_FATAL(call, "cannot use noinit on the variable '%s' "
+                      "declared without a type", dst->name);
     }
 
     SymExpr* targetTypeExpr = toSymExpr(call->get(3)->remove());
@@ -6660,7 +6661,8 @@ void resolveInitVar(CallExpr* call) {
 
     if (targetType->symbol->hasFlag(FLAG_GENERIC)) {
       // no init needs a concrete type, cannot infer from gNoInit.
-      INT_FATAL(call, "bad no init call");
+      USR_FATAL(call, "cannot use noinit on the variable '%s' "
+                      "declared with generic type", dst->name);
     }
 
     // Since we are not initializing, just set the variable's type
@@ -8023,7 +8025,6 @@ static Type* resolveGenericActual(SymExpr* se, bool resolvePartials) {
       //   extern var x: c_ptr(c_int);
       if ((vs->hasFlag(FLAG_EXTERN) == true || isGlobal(vs)) &&
           vs->defPoint             != NULL &&
-          vs->defPoint->init       != NULL &&
           vs->getValType()         == dtUnknown ) {
         vs->type = resolveTypeAlias(se);
       }
@@ -8203,9 +8204,22 @@ Type* resolveTypeAlias(SymExpr* se) {
     } else if (VarSymbol* var = toVarSymbol(se->symbol())) {
       SET_LINENO(var->defPoint);
 
-      DefExpr* def      = var->defPoint;
-      Expr*    typeExpr = resolveTypeOrParamExpr(def->init);
-      SymExpr* tse      = toSymExpr(typeExpr);
+      DefExpr* def = var->defPoint;
+      SymExpr* tse = NULL;
+
+      if (def->init != NULL) {
+        tse = toSymExpr(resolveTypeOrParamExpr(def->init));
+      } else if (SymExpr* singleDef = var->getSingleDef()) {
+        // Figure out the RHS of the singleDef, assuming it is in a PRIM_MOVE.
+        if (CallExpr* call = toCallExpr(singleDef->parentExpr))
+          if (call->isPrimitive(PRIM_MOVE))
+            if (call->get(1) == singleDef)
+              tse = toSymExpr(resolveTypeOrParamExpr(call->get(2)));
+      }
+
+      if (tse == NULL) {
+        INT_FATAL("unsupported case in resolveTypeAlias");
+      }
 
       retval = resolveTypeAlias(tse);
     }
