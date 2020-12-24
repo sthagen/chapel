@@ -197,6 +197,7 @@ appropriately before the elements can be read.
   data structures with these mechanisms.
 
  */
+pragma "module included by default"
 module ChapelIO {
   use ChapelBase; // for uint().
   use ChapelLocale;
