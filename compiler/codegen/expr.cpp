@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Hewlett Packard Enterprise Development LP
+ * Copyright 2020-2021 Hewlett Packard Enterprise Development LP
  * Copyright 2004-2019 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
@@ -1336,9 +1336,11 @@ GenRet createTempVar(const char* ctype)
     ret.c = std::string("&") + name;
   } else {
 #ifdef HAVE_LLVM
-    llvm::Type* llTy = info->lvt->getType(ctype);
+    bool isUnsigned;
+    llvm::Type* llTy = info->lvt->getType(ctype, &isUnsigned);
     INT_ASSERT(llTy);
     ret.val = createVarLLVM(llTy, name);
+    ret.isUnsigned = isUnsigned;
 #endif
   }
   return ret;
@@ -1368,6 +1370,7 @@ GenRet createTempVar(Type* t)
 #endif
   }
   ret.chplType = t;
+  ret.isUnsigned = !is_signed(t);
   return ret;
 }
 

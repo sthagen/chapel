@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Hewlett Packard Enterprise Development LP
+ * Copyright 2020-2021 Hewlett Packard Enterprise Development LP
  * Copyright 2004-2019 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
@@ -1030,7 +1030,7 @@ void explainCandidateRejection(CallInfo& info, FnSymbol* fn) {
   if (failingActualIsReceiver)
     failingActualDesc = astr("method call receiver");
   else
-    failingActualDesc = astr("call actual argument #",
+    failingActualDesc = astr("actual argument #",
                              istr(failingActualUserIndex));
 
   if (fnIsMethod && !callIsMethod) {
@@ -1048,7 +1048,7 @@ void explainCandidateRejection(CallInfo& info, FnSymbol* fn) {
     case RESOLUTION_CANDIDATE_TYPE_RELATED:
     case RESOLUTION_CANDIDATE_TYPE_SAME_CATEGORY:
     case RESOLUTION_CANDIDATE_UNRELATED_TYPE:
-      USR_PRINT(call, "because %s with type %s",
+      USR_PRINT(call, "because %s with type '%s'",
                     failingActualDesc,
                     toString(failingActual->getValType()));
       USR_PRINT(failingFormal, "is passed to formal '%s'",
@@ -1075,9 +1075,14 @@ void explainCandidateRejection(CallInfo& info, FnSymbol* fn) {
         USR_PRINT(failingFormal, "is passed to formal '%s'",
                                  toString(failingFormal));
       } else {
-        USR_PRINT(call, "because type %s", failingActualDesc);
-        USR_PRINT(fn, "is passed to non-type formal '%s'",
-                      toString(failingFormal));
+        USR_PRINT(call, "because %s is a type", failingActualDesc);
+        if (failingFormal->hasFlag(FLAG_EXPANDED_VARARGS)) {
+          USR_PRINT(fn, "but is passed to non-type varargs formal '%s'",
+                    failingFormal->demungeVarArgName().c_str());
+        } else {
+          USR_PRINT(fn, "but is passed to non-type formal '%s'",
+                    toString(failingFormal));
+        }
       }
       break;
     case RESOLUTION_CANDIDATE_TOO_MANY_ARGUMENTS:
