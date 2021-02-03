@@ -991,6 +991,8 @@ jacobi:
     - Catch blocks catch owned, test code throws owned (#12090)
   04/23/19:
     - Denormalize the test in CondStmts (#12867)
+  01/26/21:
+    - Automatically aggregate some communication in foralls (#16965)
 
 knucleotide: &knucleotide-base
   10/17/15:
@@ -1365,6 +1367,8 @@ memleaksfull:
     - Add tests and futures looking at I/O on class hierarchies (#16920)
   01/15/21:
     - Fix memory leak for classes/io/classToString (#16949)
+  01/26/21:
+    - Support fixed sized arrays of tuples containing non-nilable classes (#16802)
 # End memleaksfull
 
 meteor:
@@ -2042,7 +2046,7 @@ arkouda: &arkouda-base
     - text: Optimize DstAggregator by caching remote allocations (mhmerrill/arkouda#485)
       config: 16-node-cs, 16-node-xc
   10/02/20:
-    - text: Optimize SrcAggregator by caching remote allocations (mhmerrill/arkouda/#503)
+    - text: Optimize SrcAggregator by caching remote allocations (mhmerrill/arkouda#503)
       config: 16-node-cs
   10/03/20:
     - text: Enable SrcAggregator under ugni (mhmerrill/arkouda#507)
@@ -2050,16 +2054,16 @@ arkouda: &arkouda-base
     - text: Move XC testing from elogin back to login node
       config: 16-node-xc
   10/06/20:
-    - text: Optimize aggregators by yielding more often (mhmerrill/arkouda/#509)
+    - text: Optimize aggregators by yielding more often (mhmerrill/arkouda#509)
       config: 16-node-cs, 16-node-xc
   10/21/20:
     - Upgrade Arkouda release testing from 1.22 to 1.23 (#16599)
   01/08/21:
-    - Benchmark improvements (mhmerrill/arkouda/#616)
+    - Benchmark improvements (mhmerrill/arkouda#616)
   01/14/21:
     - Optimize scans by using noinit for the result array (#16919)
   01/15/21:
-    - Optimize int64 prod reduce (mhmerrill/arkouda/#628)
+    - Optimize int64 prod reduce (mhmerrill/arkouda#628)
 
 
 arkouda-comp:
