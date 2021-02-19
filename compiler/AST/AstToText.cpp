@@ -28,16 +28,6 @@
 #include "IfExpr.h"
 #include "LoopExpr.h"
 
-AstToText::AstToText()
-{
-
-}
-
-AstToText::~AstToText()
-{
-
-}
-
 const std::string& AstToText::text() const
 {
   return mText;
@@ -626,7 +616,7 @@ bool AstToText::isTypeDefault(Expr* expr) const
 void AstToText::appendDomain(CallExpr* expr, bool printingType)
 {
   mText += "domain(";
-              
+
   for(int i=2; i<=expr->numActuals(); i++)
   {
     if (i != 2)
@@ -841,7 +831,17 @@ void AstToText::appendExpr(SymExpr* expr, bool printingType, bool quoteStrings)
     }
     else
     {
-      if (strcmp(var->name, "nil") != 0)
+      /*
+       * For an expression like
+       *   var o: object? = nil;
+       * we arrive here at the "nil" with printingType == false.
+       *
+       * For an expression like
+       *   x: [something] int
+       * we arrive here inside the [] with printingType == true.  When
+       * var->name is "nil" we want to produce "x: [] int".
+       */
+      if (!printingType || strcmp(var->name, "nil") != 0)
         mText += var->name;
     }
   }
@@ -949,7 +949,7 @@ void AstToText::appendExpr(CallExpr* expr, bool printingType)
       {
         mText += "{";
         appendExpr(expr->get(1), printingType);
-        
+
         // last argument to chpl__buildDomainExpr is definedConst
         for (int index = 2; index <= expr->numActuals()-1; index++)
         {

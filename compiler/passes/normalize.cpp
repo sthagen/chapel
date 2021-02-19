@@ -255,12 +255,6 @@ void normalize() {
         fn->name = astrDeinit;
       }
 
-    // make sure methods don't attempt to overload operators
-    } else if (isalpha(fn->name[0])         == 0   &&
-               fn->name[0]                  != '_' &&
-               fn->formals.length           >  1   &&
-               fn->getFormal(1)->typeInfo() == gMethodToken->typeInfo()) {
-      USR_FATAL(fn, "invalid method name");
     }
   }
 
@@ -964,13 +958,13 @@ static void normalizeIfExprBranch(VarSymbol* cond, VarSymbol* result, BlockStmt*
 // temporary will take the place of the IfExpr, and the CondStmt will be
 // inserted before the IfExpr's parent statement.
 //
-class LowerIfExprVisitor : public AstVisitorTraverse
+class LowerIfExprVisitor final : public AstVisitorTraverse
 {
   public:
-    LowerIfExprVisitor() { }
-    virtual ~LowerIfExprVisitor() { }
+    LowerIfExprVisitor()          = default;
+   ~LowerIfExprVisitor() override = default;
 
-    virtual void exitIfExpr(IfExpr* node);
+    void exitIfExpr(IfExpr* node) override;
 };
 
 static bool isInsideDefExpr(Expr* expr) {
@@ -1348,13 +1342,13 @@ static CallExpr* destructureErr() {
 
 
 
-class AddEndOfStatementMarkers : public AstVisitorTraverse
+class AddEndOfStatementMarkers final : public AstVisitorTraverse
 {
   public:
-    virtual bool enterCallExpr(CallExpr* node);
-    virtual bool enterDefExpr(DefExpr* node);
-    virtual bool enterIfExpr(IfExpr* node);
-    virtual bool enterLoopExpr(LoopExpr* node);
+    bool enterCallExpr(CallExpr* node) override;
+    bool enterDefExpr(DefExpr* node) override;
+    bool enterIfExpr(IfExpr* node) override;
+    bool enterLoopExpr(LoopExpr* node) override;
 };
 
 // Note, this might be called also during resolution
