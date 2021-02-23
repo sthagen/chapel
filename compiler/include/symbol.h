@@ -747,6 +747,7 @@ extern const char* astrSgte;    // >=
 extern const char* astrSlt;     // <
 extern const char* astrSlte;    // <=
 extern const char* astrSswap;   // <=>
+extern const char* astrScolon;  // :
 extern const char* astr_cast;
 extern const char* astr_defaultOf;
 extern const char* astrInit;
@@ -883,7 +884,8 @@ void printLlvmIr(const char* name, llvm::Function *func, llvmStageNum_t numStage
 void preparePrintLlvmIrForCodegen();
 void completePrintLlvmIrStage(llvmStageNum_t numStage);
 
-const char* toString(ArgSymbol* arg, bool withType);
+const char* toString(ArgSymbol* arg, bool withTypeAndIntent);
 const char* toString(VarSymbol* var, bool withType);
+const char* toString(Symbol* sym, bool withTypeAndIntent);
 
 #endif

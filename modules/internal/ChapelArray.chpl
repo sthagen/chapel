@@ -992,7 +992,7 @@ module ChapelArray {
   // Helper function used to ensure a returned array matches the declared
   // return type when the declared return type specifies a particular element
   // type but not the domain
-  proc chpl__checkEltTypeMatch(a: [], type b) {
+  proc chpl__checkRetEltTypeMatch(a: [], type b) {
     if (a.eltType != b) {
       compilerError("array element type mismatch in return from ",
                     a.eltType: string,
@@ -1001,13 +1001,33 @@ module ChapelArray {
     }
   }
 
-  proc chpl__checkEltTypeMatch(a: _iteratorRecord, type b) {
+  proc chpl__checkRetEltTypeMatch(a: _iteratorRecord, type b) {
     type eltType = iteratorToArrayElementType(a.type);
     if (eltType != b) {
       compilerError("array element type mismatch in return from ",
                     eltType: string,
                     " to ",
                     b: string);
+    }
+  }
+  proc chpl__checkOutEltTypeMatch(a: [], type b) {
+    if (a.eltType != b) {
+      compilerError("array element type mismatch in initializing out formal ",
+                    "with element type ",
+                    b: string,
+                    " from array with element type ",
+                    a.eltType: string);
+    }
+  }
+
+  proc chpl__checkOutEltTypeMatch(a: _iteratorRecord, type b) {
+    type eltType = iteratorToArrayElementType(a.type);
+    if (eltType != b) {
+      compilerError("array element type mismatch in initializing out formal ",
+                    "with element type ",
+                    b: string,
+                    " from iterator with element type ",
+                    eltType: string);
     }
   }
 
@@ -2287,7 +2307,7 @@ module ChapelArray {
      results in the domain '{1..10}'
    */
   pragma "no doc"
-  proc _cast(type t:_domain, d: _domain) where chpl__isRectangularDomType(t) && isRectangularDom(d) {
+  operator :(d: _domain, type t:_domain) where chpl__isRectangularDomType(t) && isRectangularDom(d) {
     var tmpD: t;
     if tmpD.rank != d.rank then
       compilerError("rank mismatch in cast");
@@ -2311,7 +2331,7 @@ module ChapelArray {
     }
   }
 
-  proc _cast(type t:string, x: _domain) {
+  operator :(x: _domain, type t:string) {
     use IO;
     return stringify(x);
   }
@@ -3456,7 +3476,7 @@ module ChapelArray {
 
   // The same as the built-in _cast, except accepts a param arg.
   pragma "no doc"
-  proc _cast(type t:_array, param arg) {
+  operator :(param arg, type t:_array) {
     var result: t;
     // The would-be param version of proc =, inlined.
     chpl__transferArray(result, arg);
@@ -3465,7 +3485,7 @@ module ChapelArray {
 
   // How to cast arrays to strings
   pragma "no doc"
-  proc _cast(type t:string, x: []) {
+  operator :(x: [], type t:string) {
     use IO;
     return stringify(x);
   }
