@@ -734,18 +734,6 @@ struct bitmap_t* bitmapAlloc(size_t len) {
   return b;
 }
 
-static inline
-void bitmapFree(struct bitmap_t* b) {
-  if (DBG_TEST_MASK(DBG_ORDER)) {
-    BITMAP_FOREACH_SET(b, node) {
-      INTERNAL_ERROR_V("bitmapFree(): bitmap is not empty; first node %d",
-                       (int) node);
-    } BITMAP_FOREACH_SET_END
-  }
-
-  CHPL_FREE(b);
-}
-
 
 ////////////////////////////////////////
 //
@@ -4849,7 +4837,7 @@ chpl_comm_nb_handle_t rmaPutFn_selector(void* myAddr, void* mrDesc,
                                         uint64_t mrRaddr, uint64_t mrKey,
                                         size_t size,
                                         struct perTxCtxInfo_t* tcip) {
-  chpl_comm_nb_handle_t ret;
+  chpl_comm_nb_handle_t ret = NULL;
 
   switch (mcmMode) {
   case mcmm_msgOrdFence:
@@ -5308,7 +5296,7 @@ chpl_comm_nb_handle_t rmaGetFn_selector(void* myAddr, void* mrDesc,
                                         uint64_t mrRaddr, uint64_t mrKey,
                                         size_t size, void* ctx,
                                         struct perTxCtxInfo_t* tcip) {
-  chpl_comm_nb_handle_t ret;
+  chpl_comm_nb_handle_t ret = NULL;
 
   switch (mcmMode) {
   case mcmm_msgOrdFence:
@@ -5703,7 +5691,7 @@ static amoFn_t amoFn_dlvrCmplt;
 static inline
 chpl_comm_nb_handle_t amoFn_selector(struct amoBundle_t *ab,
                                      struct perTxCtxInfo_t* tcip) {
-  chpl_comm_nb_handle_t ret;
+  chpl_comm_nb_handle_t ret = NULL;
 
   switch (mcmMode) {
   case mcmm_msgOrdFence:
