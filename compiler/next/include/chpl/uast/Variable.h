@@ -21,7 +21,9 @@
 #define CHPL_UAST_VARIABLE_H
 
 #include "chpl/queries/Location.h"
-#include "chpl/uast/NamedDecl.h"
+#include "chpl/uast/Formal.h"
+#include "chpl/uast/IntentList.h"
+#include "chpl/uast/VarLikeDecl.h"
 
 namespace chpl {
 namespace uast {
@@ -42,41 +44,29 @@ namespace uast {
 
   each of these is a VariableDecl that refers to a Variable Sym.
  */
-class Variable final : public NamedDecl {
+class Variable final : public VarLikeDecl {
  public:
   enum Kind {
-    VAR,
-    CONST,
-    CONST_REF,
-    REF,
-    PARAM,
-    TYPE,
-    INDEX
+    // Use IntentList here for consistent enum values.
+    VAR         = (int) IntentList::VAR,
+    CONST       = (int) IntentList::CONST,
+    CONST_REF   = (int) IntentList::CONST_REF,
+    REF         = (int) IntentList::REF,
+    PARAM       = (int) IntentList::PARAM,
+    TYPE        = (int) IntentList::TYPE,
+    INDEX       = (int) IntentList::INDEX
   };
 
  private:
   Kind kind_;
-  int8_t typeExpressionChildNum_;
-  int8_t initExpressionChildNum_;
 
   Variable(ASTList children, Decl::Visibility vis, UniqueString name,
            Variable::Kind kind,
            int8_t typeExpressionChildNum, int8_t initExpressionChildNum)
-    : NamedDecl(asttags::Variable, std::move(children), vis, name),
-      kind_(kind),
-      typeExpressionChildNum_(typeExpressionChildNum),
-      initExpressionChildNum_(initExpressionChildNum) {
-
-    assert(numChildren() <= 2);
-    if (typeExpressionChildNum >= 0) {
-      assert(typeExpressionChildNum <= 2);
-      assert(child(typeExpressionChildNum)->isExpression());
-    }
-    if (initExpressionChildNum >= 0) {
-      assert(initExpressionChildNum <= 2);
-      assert(child(initExpressionChildNum)->isExpression());
-    }
-  }
+      : VarLikeDecl(asttags::Variable, std::move(children), vis, name,
+                    typeExpressionChildNum,
+                    initExpressionChildNum),
+        kind_(kind) {}
 
   bool contentsMatchInner(const ASTNode* other) const override;
   void markUniqueStringsInner(Context* context) const override;
@@ -93,35 +83,8 @@ class Variable final : public NamedDecl {
   /**
     Returns the kind of the variable (`var` / `const` / `param` etc).
    */
-  const Kind kind() const { return this->kind_; }
+  Kind kind() const { return this->kind_; }
 
-  /**
-    Returns the type expression used in the variable's declaration, or nullptr
-    if there wasn't one.
-    */
-  const Expression* typeExpression() const {
-    if (typeExpressionChildNum_ >= 0) {
-      const ASTNode* ast = this->child(typeExpressionChildNum_);
-      assert(ast->isExpression());
-      return (const Expression*)ast;
-    } else {
-      return nullptr;
-    }
-  }
-
-  /**
-    Returns the init expression used in the variable's declaration, or nullptr
-    if there wasn't one.
-    */
-  const Expression* initExpression() const {
-    if (initExpressionChildNum_ >= 0) {
-      const ASTNode* ast = this->child(initExpressionChildNum_);
-      assert(ast->isExpression());
-      return (const Expression*)ast;
-    } else {
-      return nullptr;
-    }
-  }
 };
 
 

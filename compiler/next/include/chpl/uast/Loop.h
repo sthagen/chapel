@@ -32,25 +32,26 @@ namespace uast {
  */
 class Loop: public ControlFlow {
  protected:
-  Loop(asttags::ASTTag tag, ASTList children, int32_t loopBodyChildNum,
-       bool usesDo)
+  Loop(asttags::ASTTag tag, ASTList children, int loopBodyChildNum,
+       int numLoopBodyStmts,
+       bool usesImplicitBlock)
     : ControlFlow(tag, std::move(children)),
       loopBodyChildNum_(loopBodyChildNum),
-      usesDo_(usesDo) {
-    assert(loopBodyChildNum_ >= 0);
-    assert(loopBodyChildNum < this->numChildren());
+      numLoopBodyStmts_(numLoopBodyStmts),
+      usesImplicitBlock_(usesImplicitBlock) {
+    assert(loopBodyChildNum_ >= 0 && numLoopBodyStmts_ >= 0);
+    assert((loopBodyChildNum_ + numLoopBodyStmts_) <= this->numChildren());
   }
 
-  bool loopContentsMatchInner(const Loop* other) const {
-    return this->controlFlowContentsMatchInner((const ControlFlow*)other);
-  }
+  bool loopContentsMatchInner(const Loop* other) const;
 
   void loopMarkUniqueStringsInner(Context* context) const {
-    this->controlFlowMarkUniqueStringsInner(context);
+    controlFlowMarkUniqueStringsInner(context);
   }
 
-  int32_t loopBodyChildNum_;
-  bool usesDo_;
+  int loopBodyChildNum_;
+  int numLoopBodyStmts_;
+  bool usesImplicitBlock_;
 
  public:
   virtual ~Loop() override = 0; // this is an abstract base class
@@ -68,23 +69,38 @@ class Loop: public ControlFlow {
    Return the number of statements in the loop.
    */
   int numStmts() const {
-    return this->numChildren() - loopBodyChildNum_;
+    return numLoopBodyStmts_;
   }
 
   /**
    Return the i'th statement in the loop.
    */
   const Expression* stmt(int i) const {
+    assert(i >= 0 && i < numLoopBodyStmts_);
     const ASTNode* ast = this->child(i+loopBodyChildNum_);
     assert(ast->isExpression());
     return (const Expression*)ast;
   }
 
   /**
-    Returns true if the body of this loop is introduced by a 'do' keyword.
+    Returns true if the body of this loop introduces an implicit block.
+    For example:
+
+    \rst
+    .. code-block:: chapel
+
+        // Example 1:
+        [i in 0..15] writeln(i);
+
+        // Example 2:
+        for i in 0..15 do writeln(i);
+
+    \endrst
+
+    Both introduce an implicit block. 
   */
-  bool usesDo() const {
-    return usesDo_;
+  bool usesImplicitBlock() const {
+    return usesImplicitBlock_;
   }
 };
 

@@ -847,6 +847,10 @@ static void resolveUnresolvedSymExpr(UnresolvedSymExpr* usymExpr,
       }
     }
 
+    if (sym->hasFlag(FLAG_DEPRECATED)) {
+      sym->generateDeprecationWarning(usymExpr);
+    }
+
     symExpr = new SymExpr(sym);
     usymExpr->replace(symExpr);
 
@@ -1507,6 +1511,10 @@ static void resolveEnumeratedTypes() {
 
             for_enums(constant, type) {
               if (!strcmp(constant->sym->name, name)) {
+                if (constant->sym->hasFlag(FLAG_DEPRECATED)) {
+                  constant->sym->generateDeprecationWarning(call);
+                }
+
                 call->replace(new SymExpr(constant->sym));
               }
             }

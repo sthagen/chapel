@@ -55,8 +55,7 @@ def has_compatible_installed_llvm():
     got = run_command([find_llvm_config, preferred_vers])
     got = got.strip()
     platform = chpl_platform.get('target')
-    # We have a problem with homebrew installed system llvm
-    if platform != "darwin" and got and got != "missing-llvm-config":
+    if got and got != "missing-llvm-config":
         return True
     else:
         return False
@@ -65,13 +64,15 @@ def has_compatible_installed_llvm():
 def get():
     llvm_val = overrides.get('CHPL_LLVM')
     if not llvm_val:
-        llvm_val = 'none'
+        llvm_val = 'unset'
 
         if is_included_llvm_built():
             llvm_val = 'bundled'
         elif (compatible_platform_for_llvm_default()):
             if has_compatible_installed_llvm():
                 llvm_val = 'system'
+        else:
+            llvm_val = 'none'
 
     if llvm_val == 'llvm':
         sys.stderr.write("Warning: CHPL_LLVM=llvm is deprecated. "

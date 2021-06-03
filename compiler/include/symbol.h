@@ -234,6 +234,11 @@ public:
   // It can return NULL if it's unable to make sense of the AST pattern.
   Expr*              getInitialization()                       const;
 
+  std::string deprecationMsg;
+
+  const char* getDeprecationMsg() const;
+  void generateDeprecationWarning(Expr* context);
+
 protected:
                      Symbol(AstTag      astTag,
                             const char* init_name,

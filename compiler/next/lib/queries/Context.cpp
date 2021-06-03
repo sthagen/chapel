@@ -26,23 +26,24 @@
 #include <cstdlib>
 #include <cassert>
 
-#include "my_aligned_alloc.h" // assumes size_t defined
+#include "../util/my_aligned_alloc.h" // assumes size_t defined
 
 namespace chpl {
 
 using namespace chpl::querydetail;
 
 static void defaultReportErrorPrintDetail(const ErrorMessage& err,
-                                          const char* kind = "note") {
-  printf("  %s:%i: %s: %s\n", err.path().c_str(), err.line(), kind,
-         err.message().c_str());
+                                          const char* prefix,
+                                          const char* kind) {
+  printf("%s%s:%i: %s: %s\n",
+         prefix, err.path().c_str(), err.line(), kind, err.message().c_str());
   for (const auto& detail : err.details()) {
-    defaultReportErrorPrintDetail(detail);
+    defaultReportErrorPrintDetail(detail, "  ", "note");
   }
 }
 
 void Context::defaultReportError(const ErrorMessage& err) {
-  defaultReportErrorPrintDetail(err, "error");
+  defaultReportErrorPrintDetail(err, "", "error");
 }
 
 Context::~Context() {
@@ -211,10 +212,12 @@ void Context::collectGarbage() {
 
 void Context::setFilePathForModuleName(UniqueString modName, UniqueString path) {
   auto tupleOfArgs = std::make_tuple(modName);
-  auto queryMapResult = updateResultForQuery(filePathForModuleNameQuery,
-                                             tupleOfArgs, path,
-                                             "filePathForModuleNameQuery",
-                                             false);
+
+  updateResultForQuery(filePathForModuleNameQuery,
+                       tupleOfArgs, path,
+                       "filePathForModuleNameQuery",
+                       false);
+
   printf("SETTING FILE PATH FOR MODULE %s -> %s\n",
          modName.c_str(), path.c_str());
 }

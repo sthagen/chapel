@@ -37,7 +37,7 @@ void Local::markUniqueStringsInner(Context* context) const {
 owned<Local> Local::build(Builder* builder,
                           Location loc,
                           ASTList stmts,
-                          bool usesDo) {
+                          bool usesImplicitBlock) {
   ASTList lst;
   int8_t condChildNum = -1;
 
@@ -45,7 +45,7 @@ owned<Local> Local::build(Builder* builder,
     lst.push_back(std::move(stmt));
   }
 
-  Local* ret = new Local(std::move(lst), condChildNum, usesDo);
+  Local* ret = new Local(std::move(lst), condChildNum, usesImplicitBlock);
   builder->noteLocation(ret, loc);
   return toOwned(ret);
 }
@@ -54,10 +54,8 @@ owned<Local> Local::build(Builder* builder,
                           Location loc,
                           owned<Expression> condition,
                           ASTList stmts,
-                          bool usesDo) {
-#ifndef NDEBUG
+                          bool usesImplicitBlock) {
   assert(condition.get() != nullptr);
-#endif
 
   ASTList lst;
   int8_t condChildNum = -1;
@@ -71,7 +69,7 @@ owned<Local> Local::build(Builder* builder,
     lst.push_back(std::move(stmt));
   }
 
-  Local* ret = new Local(std::move(lst), condChildNum, usesDo);
+  Local* ret = new Local(std::move(lst), condChildNum, usesImplicitBlock);
   builder->noteLocation(ret, loc);
   return toOwned(ret);
 }

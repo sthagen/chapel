@@ -62,7 +62,7 @@ std::vector<ParserComment>* ParserContext::gatherComments(YYLTYPE location) {
     return nullptr;
   }
 
-  if (lastCommentToGather == this->comments->size()-1) {
+  if (lastCommentToGather == (int)this->comments->size()-1) {
     // need to return all comments
     std::vector<ParserComment>* ret = this->comments;
     this->comments = nullptr;
@@ -71,7 +71,7 @@ std::vector<ParserComment>* ParserContext::gatherComments(YYLTYPE location) {
 
   // general case: return only the comments up to lastCommentToGather
   std::vector<ParserComment>* ret = new std::vector<ParserComment>();
-  for (size_t i = 0; i <= lastCommentToGather; i++) {
+  for (int i = 0; i <= lastCommentToGather; i++) {
     ret->push_back((*this->comments)[i]);
   }
   this->comments->erase(this->comments->begin(),
@@ -267,6 +267,8 @@ ParserContext::gatherCommentsFromList(ParserExprList* lst,
 
 void ParserContext::appendComments(CommentsAndStmt*cs,
                                    std::vector<ParserComment>* comments) {
+  if (comments == nullptr) return;
+
   if (cs->comments == nullptr) {
     cs->comments = comments;
     return;
@@ -374,8 +376,8 @@ CommentsAndStmt ParserContext::buildFunctionDecl(YYLTYPE location,
 }
 
 // TODO: Need way to clear location of 'e' in the builder.
-owned<Decl> ParserContext::buildIndexVariableDecl(YYLTYPE location,
-                                                  owned<Expression> e) {
+owned<Decl> ParserContext::buildLoopIndexDecl(YYLTYPE location,
+                                              owned<Expression> e) {
   if (const Identifier* ident = e->toIdentifier()) {
     return Variable::build(builder, convertLocation(location),
                            ident->name(),
@@ -403,7 +405,7 @@ FnCall* ParserContext::wrapCalledExpressionInNew(YYLTYPE location,
       auto calledExpr = std::move(child).release()->toExpression();
       assert(calledExpr);
       auto newExpr = New::build(builder, convertLocation(location),
-                                std::move(toOwned(calledExpr)),
+                                toOwned(calledExpr),
                                 management);
       child = std::move(newExpr);
       wrappedBaseExpression = true;
@@ -414,4 +416,151 @@ FnCall* ParserContext::wrapCalledExpressionInNew(YYLTYPE location,
   assert(wrappedBaseExpression);
 
   return fnCall;
+}
+
+CommentsAndStmt
+ParserContext::buildBracketLoopStmt(YYLTYPE locLeftBracket,
+                                    YYLTYPE locIndex,
+                                    ParserExprList* indexExprs,
+                                    Expression* iterandExpr,
+                                    WithClause* withClause,
+                                    CommentsAndStmt stmt) {
+  // Should not be nullptr, use other overload instead.
+  assert(indexExprs && indexExprs->size() >= 1);
+
+  const bool usesImplicitBlock = !(stmt.stmt->isBlock());
+  auto exprLst = makeList(stmt);
+  auto comments = gatherCommentsFromList(exprLst, locLeftBracket);
+  Expression* indexExpr = nullptr;
+
+  if (indexExprs->size() > 1) {
+    const char* msg = "Invalid index expression";
+    return { .comments=comments, .stmt=raiseError(locIndex, msg) };
+  } else {
+    auto uncastedIndexExpr = consumeList(indexExprs)[0].release();
+    indexExpr = uncastedIndexExpr->toExpression();
+  }
+
+  assert(indexExpr);
+  auto index = buildLoopIndexDecl(locIndex, toOwned(indexExpr));
+
+  auto astLst = consumeList(exprLst);
+  auto statements = builder->flattenTopLevelBlocks(std::move(astLst));
+  auto node = BracketLoop::build(builder, convertLocation(locLeftBracket),
+                                 std::move(index),
+                                 toOwned(iterandExpr),
+                                 toOwned(withClause),
+                                 std::move(statements),
+                                 usesImplicitBlock,
+                                 /*isExpressionLevel*/ false);
+
+  return { .comments=comments, .stmt=node.release() };
+}
+
+CommentsAndStmt ParserContext::buildBracketLoopStmt(YYLTYPE locLeftBracket,
+                                                    YYLTYPE locIterExprs,
+                                                    ParserExprList* iterExprs,
+                                                    WithClause* withClause,
+                                                    CommentsAndStmt stmt) {
+  assert(iterExprs && iterExprs->size() >= 1);
+
+  const bool usesImplicitBlock = !(stmt.stmt->isBlock());
+  auto exprLst = makeList(stmt);
+  auto comments = gatherCommentsFromList(exprLst, locLeftBracket);
+  Expression* iterandExpr = nullptr;
+
+  if (iterExprs->size() > 1) {
+    const char* msg = "Invalid iterand expression";
+    return { .comments=comments, .stmt=raiseError(locIterExprs, msg) };
+  } else {
+    auto uncastedIterandExpr = consumeList(iterExprs)[0].release();
+    iterandExpr = uncastedIterandExpr->toExpression();
+  }
+
+  assert(iterandExpr);
+
+  auto astLst = consumeList(exprLst);
+  auto statements = builder->flattenTopLevelBlocks(std::move(astLst));
+  auto node = BracketLoop::build(builder, convertLocation(locLeftBracket),
+                                 /*index*/ nullptr,
+                                 toOwned(iterandExpr),
+                                 toOwned(withClause),
+                                 std::move(statements),
+                                 usesImplicitBlock,
+                                 /*isExpressionLevel*/ false);
+
+  return { .comments=comments, .stmt=node.release() };
+}
+
+CommentsAndStmt ParserContext::buildForallLoopStmt(YYLTYPE locForall,
+                                                   YYLTYPE locIndex,
+                                                   Expression* indexExpr,
+                                                   Expression* iterandExpr,
+                                                   WithClause* withClause,
+                                                   BlockOrDo blockOrDo) {
+  auto index = indexExpr ? buildLoopIndexDecl(locIndex, toOwned(indexExpr))
+                         : nullptr;
+  auto comments = gatherCommentsFromList(blockOrDo.exprList, locForall);
+  auto node = Forall::build(builder, convertLocation(locForall),
+                            std::move(index),
+                            toOwned(iterandExpr),
+                            toOwned(withClause),
+                            consumeList(blockOrDo.exprList),
+                            blockOrDo.usesDo,
+                            /*isExpressionLevel*/ false);
+  return { .comments=comments, .stmt=node.release() };
+}
+
+CommentsAndStmt ParserContext::buildForeachLoopStmt(YYLTYPE locForeach,
+                                                    YYLTYPE locIndex,
+                                                    Expression* indexExpr,
+                                                    Expression* iterandExpr,
+                                                    WithClause* withClause,
+                                                    BlockOrDo blockOrDo) {
+  auto index = indexExpr ? buildLoopIndexDecl(locIndex, toOwned(indexExpr))
+                         : nullptr;
+  auto comments = gatherCommentsFromList(blockOrDo.exprList, locForeach);
+  auto node = Foreach::build(builder, convertLocation(locForeach),
+                             std::move(index),
+                             toOwned(iterandExpr),
+                             toOwned(withClause),
+                             consumeList(blockOrDo.exprList),
+                             blockOrDo.usesDo);
+  return { .comments=comments, .stmt=node.release() };
+}
+
+CommentsAndStmt ParserContext::buildForLoopStmt(YYLTYPE locFor,
+                                                YYLTYPE locIndex,
+                                                Expression* indexExpr,
+                                                Expression* iterandExpr,
+                                                BlockOrDo blockOrDo) {
+  auto index = indexExpr ? buildLoopIndexDecl(locIndex, toOwned(indexExpr))
+                         : nullptr;
+  auto comments = gatherCommentsFromList(blockOrDo.exprList, locFor);
+  auto node = For::build(builder, convertLocation(locFor),
+                         std::move(index),
+                         toOwned(iterandExpr),
+                         consumeList(blockOrDo.exprList),
+                         blockOrDo.usesDo,
+                         /*isExpressionLevel*/ false,
+                         /*isParam*/ false);
+  return { .comments=comments, .stmt=node.release() };
+}
+
+CommentsAndStmt ParserContext::buildCoforallLoopStmt(YYLTYPE locCoforall,
+                                                     YYLTYPE locIndex,
+                                                     Expression* indexExpr,
+                                                     Expression* iterandExpr,
+                                                     WithClause* withClause,
+                                                     BlockOrDo blockOrDo) {
+  auto index = indexExpr ? buildLoopIndexDecl(locIndex, toOwned(indexExpr))
+                         : nullptr;
+  auto comments = gatherCommentsFromList(blockOrDo.exprList, locCoforall);
+  auto node = Coforall::build(builder, convertLocation(locCoforall),
+                              std::move(index),
+                              toOwned(iterandExpr),
+                              toOwned(withClause),
+                              consumeList(blockOrDo.exprList),
+                              blockOrDo.usesDo);
+  return { .comments=comments, .stmt=node.release() };
 }

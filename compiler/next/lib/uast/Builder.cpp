@@ -83,7 +83,7 @@ Builder::Result Builder::result() {
   ret.topLevelExpressions.swap(topLevelExpressions_);
   ret.errors.swap(errors_);
   ret.locations.swap(locations_);
-  return std::move(ret);
+  return ret;
 }
 
 // Returns the name of the implicit module, or "" if there is none
@@ -268,6 +268,24 @@ void Builder::Result::updateFilePaths(Context* context, const Result& keep) {
       assert(false && "topLevelExpressions should only be module decls");
     }
   }
+}
+
+ASTList Builder::flattenTopLevelBlocks(ASTList lst) {
+  ASTList ret;
+
+  for (auto& ast : lst) {
+    if (ast->isBlock()) {
+      for (auto& child : takeChildren(std::move(ast))) {
+        ret.push_back(std::move(child));
+      }
+    } else {
+      ret.push_back(std::move(ast));
+    }
+  }
+
+  lst.clear();
+
+  return ret;
 }
 
 

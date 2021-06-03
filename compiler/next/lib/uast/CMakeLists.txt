@@ -22,18 +22,23 @@ target_sources(libchplcomp-obj
                ASTNode.cpp
                ASTTag.cpp
                Block.cpp
+               BracketLoop.cpp
                Builder.cpp
                Call.cpp
+               Coforall.cpp
                Comment.cpp
                ControlFlow.cpp
                Decl.cpp
                Dot.cpp
+               DoWhile.cpp
                Enum.cpp
                EnumElement.cpp
                ErroneousExpression.cpp
                Expression.cpp
                FnCall.cpp
                For.cpp
+               Forall.cpp
+               Foreach.cpp
                Formal.cpp
                Function.cpp
                Identifier.cpp
@@ -46,8 +51,14 @@ target_sources(libchplcomp-obj
                New.cpp
                OpCall.cpp
                Serial.cpp
+               TaskVar.cpp
+               TupleDecl.cpp
                TypeDecl.cpp
                Variable.cpp
+               VarLikeDecl.cpp
                Visitor.cpp
+               While.cpp
+               WithClause.cpp
+               Zip.cpp
 
               )

@@ -17,11 +17,6 @@
  * limitations under the License.
  */
 
-// include these first since they set some things that
-// are used by system headers.
-#include "../util/sys_basic.h"
-#include "../util/bswap.h"
-
 #include "chpl/queries/UniqueString.h"
 
 #include "chpl/queries/Context.h"
@@ -55,7 +50,6 @@ static bool stringContainsZeroBytes(const char* s, size_t len) {
 
 UniqueString UniqueString::build(Context* context,
                                  const char* s, size_t len) {
-  const char* u;
   assert(!stringContainsZeroBytes(s, len));
   if (s[len] == '\0') {
     // string is already appropriately null terminated

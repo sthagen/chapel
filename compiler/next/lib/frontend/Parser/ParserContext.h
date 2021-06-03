@@ -69,6 +69,9 @@ struct ParserContext {
   Variable::Kind varDeclKind;
   YYLTYPE declStartLocation;
 
+  // note when EOF is reached
+  bool atEOF;
+
   ParserContext(const char* filename, Builder* builder)
   {
     auto uniqueFilename = UniqueString::build(builder->context(), filename);
@@ -81,7 +84,8 @@ struct ParserContext {
     this->visibility         = Decl::DEFAULT_VISIBILITY;
     this->varDeclKind        = Variable::VAR;
     YYLTYPE emptyLoc = {0};
-    this->declStartLocation = emptyLoc;
+    this->declStartLocation  = emptyLoc;
+    this->atEOF              = false;
   }
 
   Context* context() { return builder->context(); }
@@ -91,6 +95,14 @@ struct ParserContext {
   Variable::Kind noteVarDeclKind(Variable::Kind varDeclKind);
   YYLTYPE declStartLoc(YYLTYPE curLoc);
   void resetDeclState();
+
+  ErroneousExpression* raiseError(YYLTYPE location, const char* msg) {
+    // note the error for printing
+    yychpl_error(&location, this, msg);
+    Location ll = convertLocation(location);
+    // return an error sentinel
+    return ErroneousExpression::build(builder, ll).release();
+  }
 
   void noteComment(YYLTYPE loc, const char* data, long size);
   std::vector<ParserComment>* gatherComments(YYLTYPE location);
@@ -168,13 +180,53 @@ struct ParserContext {
                                   bool isOverride);
   CommentsAndStmt buildFunctionDecl(YYLTYPE location, FunctionParts& fp);
 
-  // Build an index variable from a given expression. The expression is owned
+  // Build a loop index decl from a given expression. The expression is owned
   // because it will be consumed. 
-  owned<Decl> buildIndexVariableDecl(YYLTYPE location, owned<Expression> e);
+  owned<Decl> buildLoopIndexDecl(YYLTYPE location, owned<Expression> e);
 
   FnCall* wrapCalledExpressionInNew(YYLTYPE location,
                                     New::Management management,
                                     FnCall* fnCall);
+
+  CommentsAndStmt buildBracketLoopStmt(YYLTYPE locLeftBracket,
+                                       YYLTYPE locIndex,
+                                       ParserExprList* indexExprs,
+                                       Expression* iterandExpr,
+                                       WithClause* withClause,
+                                       CommentsAndStmt stmt);
+
+  CommentsAndStmt buildBracketLoopStmt(YYLTYPE locLeftBracket,
+                                       YYLTYPE locIterExprs,
+                                       ParserExprList* iterExprs,
+                                       WithClause* withClause,
+                                       CommentsAndStmt stmt);
+
+  CommentsAndStmt buildForallLoopStmt(YYLTYPE locForall,
+                                      YYLTYPE locIndex,
+                                      Expression* indexExpr,
+                                      Expression* iterandExpr,
+                                      WithClause* withClause,
+                                      BlockOrDo blockOrDo);
+
+  CommentsAndStmt buildForeachLoopStmt(YYLTYPE locForeach,
+                                       YYLTYPE locIndex,
+                                       Expression* indexExpr,
+                                       Expression* iterandExpr,
+                                       WithClause* withClause,
+                                       BlockOrDo blockOrDo);
+
+  CommentsAndStmt buildForLoopStmt(YYLTYPE locFor,
+                                   YYLTYPE locIndex,
+                                   Expression* indexExpr,
+                                   Expression* iterandExpr,
+                                   BlockOrDo blockOrDo);
+
+  CommentsAndStmt buildCoforallLoopStmt(YYLTYPE locCoforall,
+                                        YYLTYPE locIndex,
+                                        Expression* indexExpr,
+                                        Expression* iterandExpr,
+                                        WithClause* withClause,
+                                        BlockOrDo blockOrDo);
 
   // Do we really need these?
   /*

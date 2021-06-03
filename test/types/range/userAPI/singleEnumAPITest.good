@@ -20,6 +20,7 @@ alignedLow       = red
 alignedHigh      = red
 isEmpty()        = false
 size             = 1
+sizeAs(uint)     = 1
 hasFirst()       = true
 hasLast()        = true
 isNat.Algned()   = true
@@ -42,6 +43,7 @@ r == subr         = true
 r != subr         = false
 r[subr]           = red..red
 r[subr] == subr[r]= true
+r:string          = red..red
 Copying...        = red..red
 
 default trivial enum range
@@ -66,6 +68,7 @@ alignedLow       = red
 alignedHigh      = red
 isEmpty()        = true
 size             = 0
+sizeAs(uint)     = 0
 hasFirst()       = false
 hasLast()        = false
 isNat.Algned()   = true
@@ -85,6 +88,7 @@ r == subr         = true
 r != subr         = false
 r[subr]           = red..<red
 r[subr] == subr[r]= true
+r:string          = red..<red
 Copying...        = red..<red
 
 trivial strided enum range
@@ -109,6 +113,7 @@ alignedLow       = red
 alignedHigh      = red
 isEmpty()        = false
 size             = 1
+sizeAs(uint)     = 1
 hasFirst()       = true
 hasLast()        = true
 isNat.Algned()   = true
@@ -131,6 +136,7 @@ r == subr         = true
 r != subr         = false
 r[subr]           = red..red
 r[subr] == subr[r]= true
+r:string          = red..red
 Copying...        = red..red
 
 default trivial strided enum range
@@ -155,6 +161,7 @@ alignedLow       = red
 alignedHigh      = red
 isEmpty()        = true
 size             = 0
+sizeAs(uint)     = 0
 hasFirst()       = false
 hasLast()        = false
 isNat.Algned()   = true
@@ -174,6 +181,7 @@ r == subr         = true
 r != subr         = false
 r[subr]           = red..<red
 r[subr] == subr[r]= true
+r:string          = red..<red
 Copying...        = red..<red
 
 ./rangeAPItest.chpl:21: warning: This range is empty and has a single-value idxType, so its high bound isn't trustworthy

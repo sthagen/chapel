@@ -98,6 +98,7 @@ Symbol::Symbol(AstTag astTag, const char* init_name, Type* init_type) :
   flags(),
   fieldQualifiers(NULL),
   defPoint(NULL),
+  deprecationMsg(""),
   symExprsHead(NULL),
   symExprsTail(NULL)
 {
@@ -483,6 +484,33 @@ Expr* Symbol::getInitialization() const {
   return NULL;
 }
 
+const char* Symbol::getDeprecationMsg() const {
+  if (deprecationMsg[0] == '\0') {
+    const char* msg = astr(name, " is deprecated");
+    return msg;
+  } else {
+    return deprecationMsg.c_str();
+  }
+}
+
+void Symbol::generateDeprecationWarning(Expr* context) {
+  Symbol* contextParent = context->parentSymbol;
+  bool parentDeprecated = contextParent->hasFlag(FLAG_DEPRECATED);
+  if (isArgSymbol(contextParent)) {
+    // References to types for ArgSymbols have the ArgSymbol as the parent, but
+    // we care if the parent function is deprecated
+    if (contextParent->defPoint &&
+        contextParent->defPoint->parentSymbol->hasFlag(FLAG_DEPRECATED))
+      parentDeprecated = true;
+  }
+
+  // Only generate the warning if the location with the reference is not
+  // created by the compiler or also deprecated.
+  if (!contextParent->hasFlag(FLAG_COMPILER_GENERATED) &&
+      !parentDeprecated) {
+    USR_WARN(context, "%s", getDeprecationMsg());
+  }
+}
 
 bool Symbol::isImmediate() const {
   return false;

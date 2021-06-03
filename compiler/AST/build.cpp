@@ -373,6 +373,34 @@ BlockStmt* buildErrorStandin() {
   return new BlockStmt(new CallExpr(PRIM_ERROR), BLOCK_SCOPELESS);
 }
 
+DefExpr* buildDeprecated(DefExpr* def) {
+  const char* msg = "";
+  return buildDeprecated(def, msg);
+}
+
+DefExpr* buildDeprecated(DefExpr* def, const char* msg) {
+  Symbol* sym = def->sym;
+  sym->addFlag(FLAG_DEPRECATED);
+  sym->deprecationMsg = msg;
+  return def;
+}
+
+BlockStmt* buildDeprecated(BlockStmt* block) {
+  const char* msg = "";
+  return buildDeprecated(block, msg);
+}
+
+BlockStmt* buildDeprecated(BlockStmt* block, const char* msg) {
+  if (DefExpr* def = toDefExpr(block->body.head)) {
+    buildDeprecated(def, msg);
+  } else if (ForwardingStmt* forward = toForwardingStmt(block->body.head)) {
+    USR_FATAL_CONT(forward, "Can't deprecate a forwarding statement");
+  } else {
+    INT_FATAL("Unexpected deprecation case");
+  }
+  return block;
+}
+
 static void addModuleToSearchList(VisibilityStmt* newStmt, BaseAST* module) {
   UnresolvedSymExpr* modNameExpr = toUnresolvedSymExpr(module);
   if (modNameExpr) {
@@ -1035,6 +1063,9 @@ buildForallLoopExpr(Expr* indices, Expr* iteratorExpr, Expr* expr, Expr* cond, b
 //
 Expr* buildForallLoopExprFromArrayType(CallExpr* buildArrTypeCall,
                                            bool recursiveCall) {
+  if (buildArrTypeCall->isPrimitive(PRIM_ERROR))  // ex. 'type T = [];'
+    return buildArrTypeCall;
+
   // Is this a call to chpl__buildArrayRuntimeType?
   UnresolvedSymExpr* ursym = toUnresolvedSymExpr(buildArrTypeCall->baseExpr);
   if (ursym && strcmp(ursym->unresolved, "chpl__buildArrayRuntimeType") == 0) {
@@ -1170,7 +1201,7 @@ static BlockStmt* buildLoweredCoforall(Expr* indices,
   if (bounded) {
     if (!onBlock) { block->insertAtHead(new CallExpr("chpl_resetTaskSpawn", numTasks)); }
     block->insertAtHead(new CallExpr("_upEndCount", coforallCount, countRunningTasks, numTasks));
-    block->insertAtHead(new CallExpr(PRIM_MOVE, numTasks, new CallExpr(".", iterator,  new_CStringSymbol("size"))));
+    block->insertAtHead(new CallExpr(PRIM_MOVE, numTasks, new CallExpr("chpl_coforallSize", iterator)));
     block->insertAtHead(new DefExpr(numTasks));
     block->insertAtTail(new DeferStmt(new CallExpr("_endCountFree", coforallCount)));
     block->insertAtTail(new CallExpr("_waitEndCount", coforallCount, countRunningTasks, numTasks));

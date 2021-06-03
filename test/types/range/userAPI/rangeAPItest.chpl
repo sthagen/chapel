@@ -24,6 +24,7 @@ proc testRangeAPI(lbl, r: range(?), idx, subr, offset=3, count=2) {
   writeln("isEmpty()        = ", r.isEmpty());
   if (isBoundedRange(r)) {
     writeln("size             = ", r.size);
+    writeln("sizeAs(uint)     = ", r.sizeAs(uint));
   }
   writeln("hasFirst()       = ", r.hasFirst());
   writeln("hasLast()        = ", r.hasLast());
@@ -87,6 +88,7 @@ proc testRangeAPI(lbl, r: range(?), idx, subr, offset=3, count=2) {
   writeln("r != subr         = ", r != subr);
   writeln("r[subr]           = ", r[subr]);
   writeln("r[subr] == subr[r]= ", r[subr] == subr[r]);
+  writeln("r:string          = ", r:string);
   
   var r2 = r;
   writeln("Copying...        = ", r2);

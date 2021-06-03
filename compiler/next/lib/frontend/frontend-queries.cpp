@@ -27,7 +27,7 @@
 #include "chpl/uast/Module.h"
 #include "chpl/uast/Visitor.h"
 
-#include "../util/files.h"
+#include "../util/filesystem.h"
 
 #include <cstdio>
 #include <set>
@@ -259,7 +259,7 @@ static void resolveAST(Context* context,
       int postorderId = ident->id().postOrderId();
       assert(postorderId >= 0);
       // make sure the vector has room for this element
-      if (postorderId >= resultByPostorderID.size()) {
+      if (postorderId >= (int)resultByPostorderID.size()) {
         resultByPostorderID.resize(postorderId+1);
       }
       resultByPostorderID[postorderId].exp = ident;

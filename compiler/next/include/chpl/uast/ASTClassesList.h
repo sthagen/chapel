@@ -61,6 +61,7 @@ AST_BEGIN_SUBCLASSES(Expression)       // old AST: Expr
   AST_NODE(Require)                    //
   AST_NODE(Serial)                     //
   AST_NODE(Use)                        // old AST: UseStmt
+  AST_NODE(WithClause)
 
   AST_BEGIN_SUBCLASSES(ControlFlow)
 
@@ -81,6 +82,7 @@ AST_BEGIN_SUBCLASSES(Expression)       // old AST: Expr
       AST_NODE(DoWhile)                // old AST: DoWhileStmt
 
       AST_BEGIN_SUBCLASSES(IndexableLoop)
+        AST_NODE(BracketLoop)
         AST_NODE(Coforall)
         AST_NODE(For)                    // old AST: ForLoop / LoopExpr
         AST_NODE(Forall)                 // old AST: ForallStmt / LoopExpr
@@ -108,6 +110,7 @@ AST_BEGIN_SUBCLASSES(Expression)       // old AST: Expr
     AST_NODE(OpCall)
     AST_NODE(PrimCall)                 // old AST: CallExpr/PrimitiveOp
     AST_NODE(Try)                      //
+    AST_NODE(Zip)
   AST_END_SUBCLASSES(Call)
 
   AST_BEGIN_SUBCLASSES(Decl)           // old AST: Symbol or DefExpr
@@ -115,17 +118,20 @@ AST_BEGIN_SUBCLASSES(Expression)       // old AST: Expr
     AST_NODE(TupleDecl)
 
     AST_BEGIN_SUBCLASSES(NamedDecl)
-      //AST_NODE(FieldDecl)
       //AST_NODE(ForwardingDecl)
       //AST_NODE(TypeDecl)
 
       AST_NODE(EnumElement)                // old AST: EnumSymbol
-      AST_LEAF(Formal)                     // old AST: ArgSymbol
       AST_NODE(Function)                   // old AST: FnSymbol
       AST_NODE(Interface)                  // old AST: InterfaceSymbol
       AST_NODE(Module)                     // old AST: ModuleSymbol
-      AST_LEAF(Variable)                   // old AST: VarSymbol
-                                           // old AST: ShadowVarSymbol
+
+      AST_BEGIN_SUBCLASSES(VarLikeDecl)
+        //AST_LEAF(Field)
+        AST_LEAF(Formal)                   // old AST: ArgSymbol
+        AST_LEAF(TaskVar)                  // old AST: ShadowVarSymbol
+        AST_LEAF(Variable)                 // old AST: VarSymbol
+      AST_END_SUBCLASSES(VarLikeDecl)
 
       AST_BEGIN_SUBCLASSES(TypeDecl)       // old AST: TypeSymbol/Type
         AST_NODE(Enum)                     // old AST: EnumType

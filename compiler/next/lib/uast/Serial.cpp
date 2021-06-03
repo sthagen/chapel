@@ -37,7 +37,7 @@ void Serial::markUniqueStringsInner(Context* context) const {
 owned<Serial> Serial::build(Builder* builder,
                           Location loc,
                           ASTList stmts,
-                          bool usesDo) {
+                          bool usesImplicitBlock) {
   ASTList lst;
   int8_t condChildNum = -1;
 
@@ -45,7 +45,7 @@ owned<Serial> Serial::build(Builder* builder,
     lst.push_back(std::move(stmt));
   }
 
-  Serial* ret = new Serial(std::move(lst), condChildNum, usesDo);
+  Serial* ret = new Serial(std::move(lst), condChildNum, usesImplicitBlock);
   builder->noteLocation(ret, loc);
   return toOwned(ret);
 }
@@ -54,10 +54,8 @@ owned<Serial> Serial::build(Builder* builder,
                           Location loc,
                           owned<Expression> condition,
                           ASTList stmts,
-                          bool usesDo) {
-#ifndef NDEBUG
+                          bool usesImplicitBlock) {
   assert(condition.get() != nullptr);
-#endif
 
   ASTList lst;
   int8_t condChildNum = -1;
@@ -71,7 +69,7 @@ owned<Serial> Serial::build(Builder* builder,
     lst.push_back(std::move(stmt));
   }
 
-  Serial* ret = new Serial(std::move(lst), condChildNum, usesDo);
+  Serial* ret = new Serial(std::move(lst), condChildNum, usesImplicitBlock);
   builder->noteLocation(ret, loc);
   return toOwned(ret);
 }

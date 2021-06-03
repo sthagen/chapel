@@ -2373,4 +2373,44 @@ module ChapelBase {
   inline proc _removed_cast(in x) {
     return x;
   }
+
+
+  // This is a helper function that I injected to reduce the
+  // compiler's reliance on 'iterable.size' for coforall loops because
+  // we started generating warnings for the return type of
+  // '[range|domain|array].size' changing.
+  //
+  proc chpl_coforallSize(iterable) {
+    if (isRange(iterable) || isDomain(iterable) || isArray(iterable)) then
+      return iterable.sizeAs(iterable.intIdxType);
+    else
+      return iterable.size;
+  }
+
+  /* The following chpl_field_*() overloads support compiler-generated
+     comparison operators for records with array fields */
+
+  proc chpl_field_neq(a: [] ?t, b: [] t) {
+    return || reduce (a != b);
+  }
+
+  inline proc chpl_field_neq(a, b) where !isArrayType(a.type) {
+    return a != b;
+  }
+
+  proc chpl_field_lt(a: [] ?t, b: [] t) {
+    compilerError("ordered comparisons not supported by default on records with array fields");
+  }
+
+  inline proc chpl_field_lt(a, b) where !isArrayType(a.type) {
+    return a < b;
+  }
+
+  proc chpl_field_gt(a: [] ?t, b: [] t) {
+    compilerError("ordered comparisons not supported by default on records with array fields");
+  }
+
+  inline proc chpl_field_gt(a, b) where !isArrayType(a.type) {
+    return a > b;
+  }
 }
