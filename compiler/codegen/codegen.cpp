@@ -27,6 +27,7 @@
 #include "driver.h"
 #include "expr.h"
 #include "files.h"
+#include "fixupExports.h"
 #include "insertLineNumbers.h"
 #include "library.h"
 #include "llvmDebug.h"
@@ -623,8 +624,8 @@ genFinfo(std::vector<FnSymbol*> & fSymbols, bool isHeader) {
 
   forv_Vec(FnSymbol, fn, fSymbols) {
     const char* fn_name = fn->cname;
-    int fileno = getFilenameLookupPosition(fn->astloc.filename);
-    int lineno = fn->astloc.lineno;
+    int fileno = getFilenameLookupPosition(fn->astloc.filename());
+    int lineno = fn->astloc.lineno();
 
     GenRet gen;
 
@@ -2217,7 +2218,7 @@ static const char* getClangBuiltinWrappedName(const char* name)
 static void setupDefaultFilenames() {
   if (executableFilename[0] == '\0') {
     ModuleSymbol* mainMod = ModuleSymbol::mainModule();
-    const char* mainModFilename = mainMod->astloc.filename;
+    const char* mainModFilename = mainMod->astloc.filename();
     const char* filename = stripdirectories(mainModFilename);
 
     // "Executable" name should be given a "lib" prefix in library compilation,
@@ -2388,27 +2389,33 @@ static void codegenPartOne() {
   uniquify_names(cnames, types, functions, globals);
 }
 
+static fileinfo hdrfile    = { NULL, NULL, NULL };
+static fileinfo mainfile   = { NULL, NULL, NULL };
+static fileinfo defnfile   = { NULL, NULL, NULL };
+static fileinfo strconfig  = { NULL, NULL, NULL };
+static fileinfo modulefile = { NULL, NULL, NULL };
+
+
 // Do this for GPU and then do for CPU
 static void codegenPartTwo() {
-  if( fLlvmCodegen ) {
+
+  // Initialize the global gGenInfo for C code generation.
+  gGenInfo = new GenInfo();
+
+  if (fMultiLocaleInterop) {
+    codegenMultiLocaleInteropWrappers();
+  }
+
+  if (fLlvmCodegen) {
 #ifndef HAVE_LLVM
     USR_FATAL("This compiler was built without LLVM support");
 #else
-    // Initialize the global gGenInfo for for LLVM code generation
-    // by starting out with data from running clang on C dependencies.
+    INT_ASSERT(gGenInfo != NULL);
     runClang(NULL);
 #endif
-  } else {
-    // Initialize the global gGenInfo for C code generation
-    gGenInfo = new GenInfo();
   }
 
   SET_LINENO(rootModule);
-
-  fileinfo hdrfile    = { NULL, NULL, NULL };
-  fileinfo mainfile   = { NULL, NULL, NULL };
-  fileinfo defnfile   = { NULL, NULL, NULL };
-  fileinfo strconfig  = { NULL, NULL, NULL };
 
   GenInfo* info     = gGenInfo;
 
@@ -2455,7 +2462,7 @@ static void codegenPartTwo() {
           // and no compile flags, since I can't figure out how to get that either.
           const char *current_dir = "./";
           const char *empty_string = "";
-          debug_info->create_compile_unit(currentModule->astloc.filename, current_dir, false, empty_string);
+          debug_info->create_compile_unit(currentModule->astloc.filename(), current_dir, false, empty_string);
           break;
         }
       }
@@ -2482,7 +2489,6 @@ static void codegenPartTwo() {
         const char* filename = NULL;
         filename = generateFileName(fileNameHashMap, filename, currentModule->name);
         if(currentModule->modTag == MOD_USER) {
-          fileinfo modulefile;
           openCFile(&modulefile, filename, "c");
           int modulePathLen = strlen(astr(modulefile.pathname));
           char path[FILENAME_MAX];
@@ -2493,8 +2499,7 @@ static void codegenPartTwo() {
         }
       }
     }
-
-    codegen_makefile(&mainfile, NULL, false, userFileName);
+    codegen_makefile(&mainfile, NULL, NULL, false, userFileName);
   }
 
   if (fLibraryCompile && fLibraryMakefile) {
@@ -2540,7 +2545,6 @@ static void codegenPartTwo() {
       const char* filename = NULL;
       filename = generateFileName(fileNameHashMap, filename,currentModule->name);
 
-      fileinfo modulefile;
       openCFile(&modulefile, filename, "c");
       info->cfile = modulefile.fptr;
       if(fIncrementalCompilation && (currentModule->modTag == MOD_USER))
@@ -2790,4 +2794,13 @@ void nprint_view(GenRet& gen) {
   }
   printf("isUnsigned %i\n", (int) gen.isUnsigned);
   printf("}\n");
+}
+
+void closeCodegenFiles() {
+  // close the C files without trying to beautify
+  closeCFile(&hdrfile, false);
+  closeCFile(&mainfile, false);
+  closeCFile(&defnfile, false);
+  closeCFile(&strconfig, false);
+  closeCFile(&modulefile, false);
 }
